@@ -22,7 +22,7 @@
 	};
 
 	chosen {
-		bootargs = "";
+		bootargs = "console=ttyPS0,115200 root=/dev/ram rw earlyprintk earlycon";
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -50,6 +50,7 @@
 
 &sdhci0 {
 	status = "okay";
+	disable-wp;
 };
 
 &uart1 {
