@@ -22,7 +22,7 @@
 	};
 
 	chosen {
-		bootargs = "console=ttyPS0,115200 root=/dev/mmcblk0p2 rw earlycon rootwait";
+		bootargs = "console=ttyPS0,115200 root=/dev/mmcblk0p2 ro earlycon rootwait";
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -30,6 +30,14 @@
 		#phy-cells = <0>;
 		compatible = "usb-nop-xceiv";
 		reset-gpios = <&gpio0 46 1>;
+	};
+
+	gpio-leds {
+		compatible = "gpio-leds";
+		heartbeat {
+			gpios = <&gpio0 7 0>;
+			linux,default-trigger = "heartbeat";
+		};
 	};
 };
 
