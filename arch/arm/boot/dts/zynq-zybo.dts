@@ -22,7 +22,7 @@
 	};
 
 	chosen {
-		bootargs = "console=ttyPS0,115200 root=/dev/mmcblk0p2 ro earlycon rootwait";
+		bootargs = "console=ttyPS0,115200 root=/dev/mmcblk0p2 ro earlycon rootwait clocksource=ttc_clocksource";
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -67,6 +67,6 @@
 
 &usb0 {
 	status = "okay";
-	dr_mode = "host";
+	dr_mode = "otg";
 	usb-phy = <&usb_phy0>;
 };
