@@ -252,6 +252,17 @@
 			#size-cells = <0>;
 		};
 
+		qspi: spi@e000d000 {
+			compatible = "xlnx,zynq-qspi-1.0";
+			reg = <0xe000d000 0x1000>;
+			status = "disabled";
+			interrupt-parent = <&intc>;
+			interrupts = <0 19 4>;
+			clock-names = "ref_clk", "pclk";
+			clocks = <&clkc 10>, <&clkc 43>;
+			num-cs = <1>;
+		};
+
 		sdhci0: mmc@e0100000 {
 			compatible = "arasan,sdhci-8.9a";
 			status = "disabled";
