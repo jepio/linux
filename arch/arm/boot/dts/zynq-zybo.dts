@@ -68,7 +68,8 @@
 		reg = <0>;
 		#address-cells = <1>;
 		#size-cells = <1>;
-		spi-max-frequency = <50000000>;
+		spi-max-frequency = <200000000>;
+		spi-rx-bus-width = <4>;
 		partition@0 {
 			label = "qspi-fsbl-uboot";
 			reg = <0x0 0x110000>;
