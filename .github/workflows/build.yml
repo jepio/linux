@@ -38,13 +38,13 @@ jobs:
           export PATH=/opt/gcc-arm/bin:$PATH
           export CROSS_COMPILE=arm-none-linux-gnueabihf-
           make zybo_defconfig
-          time make -j$(nproc) Image modules
           time make -j$(nproc) bindeb-pkg
+          mv ../*.deb ../*.buildinfo ../*.changes .
           
       - name: Upload build artifacts
         uses: actions/upload-artifact@v2.2.4
         with:
           path: |
-            ../*.deb
-            ../*.buildinfo
-            ../*.changes
+            *.deb
+            *.buildinfo
+            *.changes
