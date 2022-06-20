@@ -26,6 +26,7 @@
 #include <linux/cpumask.h>
 #include <linux/iommu.h>
 
+#include <asm/mshyperv.h>
 #include <asm/cpu_entry_area.h>
 #include <asm/stacktrace.h>
 #include <asm/sev.h>
@@ -2305,14 +2306,17 @@ static __init int __snp_rmptable_init(void)
 	u64 rmp_base, sz;
 	void *start;
 	u64 val;
+	bool has_rmp_table = !svm_hv_no_rmp_table();
 
-	if (!get_rmptable_info(&rmp_base, &sz))
-		return 1;
+	if (has_rmp_table) {
+		if (!get_rmptable_info(&rmp_base, &sz))
+			return 1;
 
-	start = memremap(rmp_base, sz, MEMREMAP_WB);
-	if (!start) {
-		pr_err("Failed to map RMP table 0x%llx+0x%llx\n", rmp_base, sz);
-		return 1;
+		start = memremap(rmp_base, sz, MEMREMAP_WB);
+		if (!start) {
+			pr_err("Failed to map RMP table 0x%llx+0x%llx\n", rmp_base, sz);
+			return 1;
+		}
 	}
 
 	/*
@@ -2323,8 +2327,11 @@ static __init int __snp_rmptable_init(void)
 	if (val & MSR_AMD64_SYSCFG_SNP_EN)
 		goto skip_enable;
 
-	/* Initialize the RMP table to zero */
-	memset(start, 0, sz);
+	if (has_rmp_table) {
+		/* Initialize the RMP table to zero */
+		memset(start, 0, sz);
+
+	}
 
 	/* Flush the caches to ensure that data is written before SNP is enabled. */
 	wbinvd_on_all_cpus();
@@ -2337,8 +2344,10 @@ static __init int __snp_rmptable_init(void)
 
 
 skip_enable:
-	rmptable_start = (unsigned long)start;
-	rmptable_end = rmptable_start + sz;
+	if (has_rmp_table) {
+		rmptable_start = (unsigned long)start;
+		rmptable_end = rmptable_start + sz;
+	}
 
 	return 0;
 }
@@ -2380,6 +2389,9 @@ static struct rmpentry *__snp_lookup_rmpentry(u64 pfn, int *level)
 		return ERR_PTR(-EINVAL);
 
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
+		return ERR_PTR(-ENXIO);
+
+	if (svm_hv_no_rmp_table())
 		return ERR_PTR(-ENXIO);
 
 	vaddr = rmptable_start + rmptable_page_offset(paddr);
@@ -2466,6 +2478,9 @@ int psmash(u64 pfn)
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
 		return -ENXIO;
 
+	if (svm_hv_enlightened_psmash())
+		return -ENXIO;
+
 	/* Binutils version 2.36 supports the PSMASH mnemonic. */
 	asm volatile(".byte 0xF3, 0x0F, 0x01, 0xFF"
 		      : "=a"(ret)
@@ -2517,6 +2532,9 @@ static int rmpupdate(u64 pfn, struct rmpupdate *val)
 		return -EINVAL;
 
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
+		return -ENXIO;
+
+	if (svm_hv_enlightened_rmpupdate())
 		return -ENXIO;
 
 	level = RMP_TO_X86_PG_LEVEL(val->pagesize);
