@@ -260,6 +260,19 @@ static inline int cpumask_to_vpset_noself(struct hv_vpset *vpset,
 	return __cpumask_to_vpset(vpset, cpus, true);
 }
 
+static inline bool svm_hv_no_rmp_table(void)
+{
+       return ms_hyperv.nested_features & HV_X64_NESTED_NO_RMP_TABLE;
+}
+static inline bool svm_hv_enlightened_rmpupdate(void)
+{
+       return boot_cpu_has(X86_FEATURE_NESTED_VIRT_SNP_MSR);
+}
+static inline bool svm_hv_enlightened_psmash(void)
+{
+       return boot_cpu_has(X86_FEATURE_NESTED_VIRT_SNP_MSR);
+}
+
 void hyperv_report_panic(struct pt_regs *regs, long err, bool in_die);
 bool hv_is_hyperv_initialized(void);
 bool hv_is_hibernation_supported(void);
@@ -281,6 +294,11 @@ static inline enum hv_isolation_type hv_get_isolation_type(void)
 {
 	return HV_ISOLATION_TYPE_NONE;
 }
+
+static inline bool svm_hv_no_rmp_table(void) { return false; }
+static inline bool svm_hv_enlightened_rmpupdate(void) { return false; }
+static inline bool svm_hv_enlightened_psmash(void) { return false; }
+
 #endif /* CONFIG_HYPERV */
 
 #endif
