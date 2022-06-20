@@ -25,6 +25,7 @@
 #include <linux/cpumask.h>
 #include <linux/iommu.h>
 
+#include <asm/mshyperv.h>
 #include <asm/cpu_entry_area.h>
 #include <asm/stacktrace.h>
 #include <asm/sev.h>
@@ -2311,6 +2312,20 @@ static __init void mfdm_enable(void *arg)
 	__mfdm_enable(smp_processor_id());
 }
 
+static bool hv_shadow_rmptable(u64 *start, u64 *len)
+{
+	u64 nr_pages = totalram_pages();
+	u64 calc_rmp_sz = (nr_pages << 4) + RMPTABLE_CPU_BOOKKEEPING_SZ;
+	void *rmptable = vmalloc(calc_rmp_sz);
+	if (!rmptable) {
+		pr_err("Failed to allocate RMP table of size %lld\n", calc_rmp_sz);
+		return false;
+	}
+	*start = (u64)rmptable;
+	*len = calc_rmp_sz;
+	return true;
+}
+
 static bool get_rmptable_info(u64 *start, u64 *len)
 {
 	u64 calc_rmp_sz, rmp_sz, rmp_base, rmp_end, nr_pages;
@@ -2355,14 +2370,21 @@ static __init int __snp_rmptable_init(void)
 	u64 rmp_base, sz;
 	void *start;
 	u64 val;
+	bool has_rmp_table = !svm_hv_no_rmp_table();
 
-	if (!get_rmptable_info(&rmp_base, &sz))
-		return 1;
+	if (has_rmp_table) {
+		if (!get_rmptable_info(&rmp_base, &sz))
+			return 1;
 
-	start = memremap(rmp_base, sz, MEMREMAP_WB);
-	if (!start) {
-		pr_err("Failed to map RMP table 0x%llx+0x%llx\n", rmp_base, sz);
-		return 1;
+		start = memremap(rmp_base, sz, MEMREMAP_WB);
+		if (!start) {
+			pr_err("Failed to map RMP table 0x%llx+0x%llx\n", rmp_base, sz);
+			return 1;
+		}
+	} else {
+		if (!hv_shadow_rmptable(&rmp_base, &sz))
+			return 1;
+		start = (void *)rmp_base;
 	}
 
 	/*
@@ -2528,6 +2550,9 @@ int psmash(u64 pfn)
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
 		return -ENXIO;
 
+	if (svm_hv_enlightened_psmash())
+		return -ENXIO;
+
 	/* Binutils version 2.36 supports the PSMASH mnemonic. */
 	asm volatile(".byte 0xF3, 0x0F, 0x01, 0xFF"
 		      : "=a"(ret)
@@ -2582,6 +2607,9 @@ static int rmpupdate(u64 pfn, struct rmpupdate *val)
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
 		return -ENXIO;
 
+	if (svm_hv_enlightened_rmpupdate())
+		return -ENXIO;
+
 	level = RMP_TO_X86_PG_LEVEL(val->pagesize);
 	npages = page_level_size(level) / PAGE_SIZE;
 
@@ -2625,6 +2653,20 @@ retry:
 			pr_err("Failed to map pfn 0x%llx pages %d in direct_map\n",
 			       pfn, npages);
 			return -EFAULT;
+		}
+	}
+
+	if (!ret && svm_hv_no_rmp_table()) {
+		int level;
+		struct rmpentry *entry = __snp_lookup_rmpentry(pfn, &level);
+		if (IS_ERR_OR_NULL(entry)) {
+			pr_err("shadow rmptable logic wrong for pfn %lld: %d\n", pfn, PTR_ERR_OR_ZERO(entry));
+		} else {
+			entry->info.assigned = val->assigned;
+			entry->info.pagesize = val->pagesize;
+			entry->info.immutable = val->immutable;
+			entry->info.gpa = val->gpa;
+			entry->info.asid = val->asid;
 		}
 	}
 
