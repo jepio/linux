@@ -219,6 +219,19 @@ static inline int cpumask_to_vpset(struct hv_vpset *vpset,
 	return nr_bank;
 }
 
+static inline bool svm_hv_no_rmp_table(void)
+{
+       return ms_hyperv.nested_features & HV_X64_NESTED_NO_RMP_TABLE;
+}
+static inline bool svm_hv_enlightened_rmpupdate(void)
+{
+       return boot_cpu_has(X86_FEATURE_NESTED_VIRT_SNP_MSR);
+}
+static inline bool svm_hv_enlightened_psmash(void)
+{
+       return boot_cpu_has(X86_FEATURE_NESTED_VIRT_SNP_MSR);
+}
+
 void hyperv_report_panic(struct pt_regs *regs, long err, bool in_die);
 bool hv_is_hyperv_initialized(void);
 bool hv_is_hibernation_supported(void);
@@ -230,6 +243,9 @@ bool hv_query_ext_cap(u64 cap_query);
 static inline bool hv_is_hyperv_initialized(void) { return false; }
 static inline bool hv_is_hibernation_supported(void) { return false; }
 static inline void hyperv_cleanup(void) {}
+static inline bool svm_hv_no_rmp_table(void) { return false; }
+static inline bool svm_hv_enlightened_rmpupdate(void) { return false; }
+static inline bool svm_hv_enlightened_psmash(void) { return false; }
 #endif /* CONFIG_HYPERV */
 
 #endif
