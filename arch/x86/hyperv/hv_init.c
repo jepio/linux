@@ -27,6 +27,7 @@
 #include <linux/kernel.h>
 #include <linux/cpuhotplug.h>
 #include <linux/syscore_ops.h>
+#include <linux/platform_device.h>
 #include <clocksource/hyperv_timer.h>
 #include <linux/highmem.h>
 #include <linux/swiotlb.h>
@@ -530,6 +531,40 @@ free_vp_assist_page:
 common_free:
 	hv_common_free();
 }
+
+static struct platform_device hv_vpsp_device = {
+	.name           = "hv-vpsp",
+	.id             = -1,
+};
+
+static int __init hv_add_platform_psp(void)
+{
+	struct acpi_table_header *table;
+	acpi_status status;
+	int err;
+
+	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP)) {
+		pr_err("hv-vpsp: SEV_SNP missing\n");
+		return -ENODEV;
+	}
+	if (x86_hyper_type != X86_HYPER_MS_HYPERV) {
+		pr_err("hv-vpsp: Non Hyper-V system\n");
+		return -ENODEV;
+	}
+	status = acpi_get_table(ACPI_SIG_ASPT, 0, &table);
+	if (ACPI_FAILURE(status)) {
+		const char *msg = acpi_format_exception(status);
+		pr_err("hv-vpsp: Failed to get ASPT table, %s\n", msg);
+		return -ENODEV;
+	}
+
+	err = platform_device_register(&hv_vpsp_device);
+	if (err)
+		pr_err("hv-vpsp: register error: %d\n", err);
+	acpi_put_table(table);
+	return 0;
+}
+device_initcall(hv_add_platform_psp);
 
 /*
  * This routine is called before kexec/kdump, it does the required cleanup.
