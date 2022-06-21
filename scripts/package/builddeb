@@ -130,7 +130,8 @@ parisc|mips|powerpc)
 	installed_image_path="boot/vmlinuz-$version"
 esac
 
-BUILD_DEBUG=$(if_enabled_echo CONFIG_DEBUG_INFO Yes)
+#BUILD_DEBUG=$(if_enabled_echo CONFIG_DEBUG_INFO Yes)
+BUILD_DEBUG=
 
 # Setup the directory structure
 rm -rf "$tmpdir" "$dbg_dir" debian/files
@@ -164,7 +165,7 @@ if is_enabled CONFIG_MODULES; then
 		mv "$tmpdir/lib/modules/$version"/* "$tmpdir/usr/lib/uml/modules/$version/"
 		rmdir "$tmpdir/lib/modules/$version"
 	fi
-	if [ -n "$BUILD_DEBUG" ] ; then
+	if true ; then
 		for module in $(find $tmpdir/lib/modules/ -name *.ko -printf '%P\n'); do
 			module=lib/modules/$module
 			mkdir -p $(dirname $dbg_dir/usr/lib/debug/$module)
