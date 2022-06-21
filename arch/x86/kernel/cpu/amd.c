@@ -580,8 +580,10 @@ static void early_detect_mem_encrypt(struct cpuinfo_x86 *c)
 		if (IS_ENABLED(CONFIG_X86_32))
 			goto clear_all;
 
-		if (!sme_me_mask)
+		if (!sme_me_mask) {
+			pr_info("SME feature was cleared\n");
 			setup_clear_cpu_cap(X86_FEATURE_SME);
+		}
 
 		rdmsrl(MSR_K7_HWCR, msr);
 		if (!(msr & MSR_K7_HWCR_SMMLOCK))
@@ -595,6 +597,7 @@ clear_sev:
 		setup_clear_cpu_cap(X86_FEATURE_SEV);
 		setup_clear_cpu_cap(X86_FEATURE_SEV_ES);
 		setup_clear_cpu_cap(X86_FEATURE_SEV_SNP);
+		pr_info("SEV related features were cleared\n");
 	}
 }
 
