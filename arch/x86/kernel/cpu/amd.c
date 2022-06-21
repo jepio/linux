@@ -595,6 +595,7 @@ clear_sev:
 		setup_clear_cpu_cap(X86_FEATURE_SEV);
 		setup_clear_cpu_cap(X86_FEATURE_SEV_ES);
 		setup_clear_cpu_cap(X86_FEATURE_SEV_SNP);
+		pr_info("SEV related features were cleared\n");
 	}
 }
 
