@@ -24,6 +24,7 @@
 #include <linux/acpi.h>
 
 #include "ccp-dev.h"
+#include "psp-dev.h"
 
 struct sp_platform {
 	int coherent;
@@ -31,6 +32,7 @@ struct sp_platform {
 	bool is_vpsp;
 
 };
+static struct sp_device *sp_dev_master;
 
 static const struct sp_dev_vdata dev_vdata[] = {
 	{
@@ -174,6 +176,26 @@ static int vpsp_parse_aspt(struct device *dev)
 	return -ENODEV;
 }
 #endif
+static void psp_set_master(struct sp_device *sp)
+{
+	if (!sp_dev_master) {
+		sp_dev_master = sp;
+		return;
+	}
+}
+
+static struct sp_device *psp_get_master(void)
+{
+	return sp_dev_master;
+}
+
+static void psp_clear_master(struct sp_device *sp)
+{
+	if (sp == sp_dev_master) {
+		sp_dev_master = NULL;
+		dev_dbg(sp->dev, "Cleared sp_dev_master\n");
+	}
+}
 
 static struct sp_dev_vdata *sp_get_of_version(struct platform_device *pdev)
 {
@@ -290,6 +312,12 @@ static int sp_platform_probe(struct platform_device *pdev)
 		sp->axcache = CACHE_WB_NO_ALLOC;
 	else
 		sp->axcache = CACHE_NONE;
+
+	if (sp_platform->is_vpsp) {
+		sp->set_psp_master_device = psp_set_master;
+		sp->get_psp_master_device = psp_get_master;
+		sp->clear_psp_master_device = psp_clear_master;
+	}
 
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(48));
 	if (ret) {
