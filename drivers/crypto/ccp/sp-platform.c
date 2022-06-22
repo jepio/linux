@@ -146,6 +146,7 @@ static int sp_platform_probe(struct platform_device *pdev)
 	attr = device_get_dma_attr(dev);
 	if (attr == DEV_DMA_NOT_SUPPORTED) {
 		dev_err(dev, "DMA is not supported");
+		ret = -EINVAL;
 		goto e_err;
 	}
 
