@@ -22,6 +22,7 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/acpi.h>
+#include <linux/timer.h>
 
 #include "ccp-dev.h"
 #include "psp-dev.h"
@@ -30,7 +31,8 @@ struct sp_platform {
 	int coherent;
 	unsigned int irq_count;
 	bool is_vpsp;
-
+	struct timer_list timer;
+	struct sp_device *sp;
 };
 static struct sp_device *sp_dev_master;
 
@@ -254,6 +256,19 @@ static int sp_get_irqs(struct sp_device *sp)
 	return 0;
 }
 
+extern irqreturn_t psp_irq_handler(int irq, void *data);
+
+static void sp_vpsp_timer(struct timer_list *timer)
+{
+	struct sp_platform *sp_platform = container_of(timer, struct sp_platform, timer);
+	struct sp_device *sp = sp_platform->sp;
+	if (sp->psp_data) {
+		psp_irq_handler(0, sp->psp_data);
+	}
+	mod_timer(timer, jiffies + msecs_to_jiffies(1));
+}
+
+
 static int sp_platform_probe(struct platform_device *pdev)
 {
 	struct sp_device *sp;
@@ -336,6 +351,12 @@ static int sp_platform_probe(struct platform_device *pdev)
 		goto e_err;
 
 	dev_notice(dev, "enabled\n");
+	/* TODO: figure out how to get the IRQ working */
+	if (sp_platform->is_vpsp) {
+		sp_platform->sp = sp;
+		timer_setup(&sp_platform->timer, sp_vpsp_timer, 0);
+		sp_vpsp_timer(&sp_platform->timer);
+	}
 
 	return 0;
 
@@ -348,8 +369,12 @@ static int sp_platform_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct sp_device *sp = dev_get_drvdata(dev);
+	struct sp_platform *sp_platform = sp->dev_specific;
 
 	sp_destroy(sp);
+
+	if (sp_platform->is_vpsp)
+		del_timer_sync(&sp_platform->timer);
 
 	dev_notice(dev, "disabled\n");
 
