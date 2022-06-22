@@ -34,7 +34,7 @@ static struct psp_device *psp_alloc_struct(struct sp_device *sp)
 	return psp;
 }
 
-static irqreturn_t psp_irq_handler(int irq, void *data)
+irqreturn_t psp_irq_handler(int irq, void *data)
 {
 	struct psp_device *psp = data;
 	unsigned int status;
