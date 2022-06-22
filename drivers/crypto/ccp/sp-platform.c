@@ -28,6 +28,8 @@
 struct sp_platform {
 	int coherent;
 	unsigned int irq_count;
+	bool is_vpsp;
+
 };
 
 static const struct sp_dev_vdata dev_vdata[] = {
@@ -54,6 +56,123 @@ static const struct of_device_id sp_of_match[] = {
 	{ },
 };
 MODULE_DEVICE_TABLE(of, sp_of_match);
+#endif
+
+#ifdef CONFIG_CRYPTO_DEV_SP_PSP
+static struct sev_vdata vsevv1 = {
+	.cmdresp_reg         = -1,
+	.cmdbuff_addr_lo_reg = -1,
+	.cmdbuff_addr_hi_reg = -1,
+};
+static struct psp_vdata vpspv1 = {
+	.sev         = &vsevv1,
+	.feature_reg = -1,
+	.inten_reg   = -1,
+	.intsts_reg  = -1,
+};
+#endif
+static const struct sp_dev_vdata vpsp_vdata[] = {
+	{
+		.bar = 0,
+#ifdef CONFIG_CRYPTO_DEV_SP_PSP
+		.psp_vdata = &vpspv1,
+#endif
+	},
+
+};
+static const struct platform_device_id sp_plat_match[] = {
+	{ "hv-vpsp", (kernel_ulong_t)&vpsp_vdata[0] },
+	{ },
+};
+MODULE_DEVICE_TABLE(platform, sp_plat_match);
+
+static struct resource vpsp_resources[] = {
+	{},
+};
+
+#ifdef CONFIG_ACPI
+static int vsps_parse_aspt(struct device *dev)
+{
+	struct acpi_aspt_acpi_mbox_regs acpiregs = {};
+	struct acpi_aspt_sev_mbox_regs sevregs = {};
+	struct acpi_aspt_global_regs gregs = {};
+	struct acpi_aspt_header *entry, *end;
+	struct acpi_table_aspt *aspt;
+	acpi_status status;
+	unsigned long long base;
+	int err = 0;
+
+	status = acpi_get_table(ACPI_SIG_ASPT, 0, (struct acpi_table_header **)&aspt);
+	if (ACPI_FAILURE(status)) {
+		const char *msg = acpi_format_exception(status);
+		dev_err(dev, "failed to get ASPT table: %s\n", msg);
+		return -ENODEV;
+	}
+	if (aspt->header.revision != ASPT_REVISION_ID) {
+		dev_err(dev, "wrong ASPT revision: %d\n", (int)aspt->header.revision);
+		err = -ENODEV;
+		goto exit;
+	}
+	entry = (struct acpi_aspt_header *)(aspt + 1);
+	end = (struct acpi_aspt_header *)((void *)aspt + aspt->header.length);
+	while (entry < end) {
+		if (((void *)entry + entry->length) > (void *)end) {
+			dev_err(dev, "error parsing ASPT\n");
+			err = -ENODEV;
+			goto exit;
+		}
+		switch (entry->type) {
+		case ACPI_ASPT_TYPE_GLOBAL_REGS:
+			memcpy(&gregs, entry, entry->length);
+			break;
+		case ACPI_ASPT_TYPE_SEV_MBOX_REGS:
+			memcpy(&sevregs, entry, entry->length);
+			break;
+		case ACPI_ASPT_TYPE_ACPI_MBOX_REGS:
+			memcpy(&acpiregs, entry, entry->length);
+			break;
+		}
+		entry = (struct acpi_aspt_header *)((void *)entry + entry->length);
+	}
+exit:
+	if (!gregs.header.length || !sevregs.header.length || !acpiregs.header.length) {
+		dev_err(dev, "missing ASPT table entry: %d %d %d\n", (int)gregs.header.length, (int)sevregs.header.length, (int)acpiregs.header.length);
+		err = -ENODEV;
+		goto exit;
+	}
+	acpi_put_table((struct acpi_table_header *)aspt);
+	base = ALIGN_DOWN(gregs.feature_reg_addr, PAGE_SIZE);
+
+	vpsp_resources[0] = ((struct resource)DEFINE_RES_MEM(base, PAGE_SIZE));
+	{
+		const struct sev_vdata tmp_vsevv1 = {
+			.cmdresp_reg = sevregs.cmd_resp_reg_addr - base,
+			.cmdbuff_addr_lo_reg = sevregs.cmd_buf_lo_reg_addr - base,
+			.cmdbuff_addr_hi_reg = sevregs.cmd_buf_hi_reg_addr - base,
+		};
+		const struct psp_vdata tmp_vpspv1 = {
+			.sev = &vsevv1,
+			.feature_reg = gregs.feature_reg_addr - base,
+			.inten_reg = gregs.irq_en_reg_addr - base,
+			.intsts_reg = gregs.irq_st_reg_addr - base,
+		};
+		memcpy(&vsevv1, &tmp_vsevv1, sizeof(struct sev_vdata));
+		memcpy(&vpspv1, &tmp_vpspv1, sizeof(struct psp_vdata));
+	}
+	dev_info(dev, "%pR\n", &vpsp_resources[0]);
+	dev_info(dev, "GLBL feature_reg_addr:\t%x\n", vpspv1.feature_reg);
+	dev_info(dev, "GLBL irq_en_reg_addr:\t%x\n", vpspv1.inten_reg);
+	dev_info(dev, "GLBL irq_st_reg_addr:\t%x\n", vpspv1.intsts_reg);
+	dev_info(dev, "SEV  cmd_resp_reg_addr:\t%x\n", vsevv1.cmdresp_reg);
+	dev_info(dev, "SEV  cmd_buf_lo_reg_addr:\t%x\n", vsevv1.cmdbuff_addr_lo_reg);
+	dev_info(dev, "SEV  cmd_buf_hi_reg_addr:\t%x\n", vsevv1.cmdbuff_addr_hi_reg);
+	return err;
+}
+#else
+static int vpsp_parse_aspt(struct device *dev)
+{
+	return -ENODEV;
+}
 #endif
 
 static struct sp_dev_vdata *sp_get_of_version(struct platform_device *pdev)
@@ -86,6 +205,8 @@ static int sp_get_irqs(struct sp_device *sp)
 	struct device *dev = sp->dev;
 	struct platform_device *pdev = to_platform_device(dev);
 	int ret;
+	if (sp_platform->is_vpsp)
+		return 0;
 
 	sp_platform->irq_count = platform_irq_count(pdev);
 
@@ -131,19 +252,33 @@ static int sp_platform_probe(struct platform_device *pdev)
 	sp->dev_specific = sp_platform;
 	sp->dev_vdata = pdev->dev.of_node ? sp_get_of_version(pdev)
 					 : sp_get_acpi_version(pdev);
+	if (!sp->dev_vdata && pdev->id_entry) {
+		sp->dev_vdata = (struct sp_dev_vdata *)pdev->id_entry->driver_data;
+		if (sp->dev_vdata == &vpsp_vdata[0]) {
+			ret = vsps_parse_aspt(dev);
+			if (ret)
+				goto e_err;
+			sp_platform->is_vpsp = true;
+		}
+
+	}
 	if (!sp->dev_vdata) {
 		ret = -ENODEV;
 		dev_err(dev, "missing driver data\n");
 		goto e_err;
 	}
 
-	sp->io_map = devm_platform_ioremap_resource(pdev, 0);
+	if (sp_platform->is_vpsp) {
+		sp->io_map = devm_ioremap_resource(dev, vpsp_resources);
+	} else {
+		sp->io_map = devm_platform_ioremap_resource(pdev, 0);
+	}
 	if (IS_ERR(sp->io_map)) {
 		ret = PTR_ERR(sp->io_map);
 		goto e_err;
 	}
 
-	attr = device_get_dma_attr(dev);
+	attr = sp_platform->is_vpsp ? DEV_DMA_COHERENT : device_get_dma_attr(dev);
 	if (attr == DEV_DMA_NOT_SUPPORTED) {
 		dev_err(dev, "DMA is not supported");
 		ret = -EINVAL;
@@ -213,6 +348,7 @@ static int sp_platform_resume(struct platform_device *pdev)
 #endif
 
 static struct platform_driver sp_platform_driver = {
+	.id_table = sp_plat_match,
 	.driver = {
 		.name = "ccp",
 #ifdef CONFIG_ACPI
