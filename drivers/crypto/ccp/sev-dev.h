@@ -31,6 +31,9 @@
 
 #define MAX_SNP_HOST_MAP_BUFS		2
 
+struct sev_device;
+typedef int (*sev_poll_handler_t)(struct sev_device *, unsigned int);
+
 struct sev_misc_dev {
 	struct kref refcount;
 	struct miscdevice misc;
@@ -54,6 +57,7 @@ struct sev_device {
 	int state;
 	unsigned int int_rcvd;
 	wait_queue_head_t int_queue;
+	sev_poll_handler_t poll_handler;
 	struct sev_misc_dev *misc;
 
 	u8 api_major;
@@ -71,6 +75,7 @@ struct sev_device {
 	struct sev_user_data_snp_config snp_config;
 };
 
+void sev_set_poll_handler(struct sev_device *sev, sev_poll_handler_t sev_poll_handler);
 int sev_dev_init(struct psp_device *psp);
 void sev_dev_destroy(struct psp_device *psp);
 
