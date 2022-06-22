@@ -988,8 +988,13 @@ EXPORT_SYMBOL_GPL(sev_platform_init);
 
 static int __sev_platform_shutdown_locked(int *error)
 {
-	struct sev_device *sev = psp_master->sev_data;
+	struct sev_device *sev;
 	int ret;
+
+	if (!psp_master)
+		return 0;
+
+	sev = psp_master->sev_data;
 
 	if (sev->state == SEV_STATE_UNINIT)
 		return 0;
@@ -1336,9 +1341,13 @@ EXPORT_SYMBOL_GPL(sev_snp_init);
 
 static int __sev_snp_shutdown_locked(int *error)
 {
-	struct sev_device *sev = psp_master->sev_data;
+	struct sev_device *sev;
 	int ret;
 
+	if (!psp_master)
+		return 0;
+
+	sev = psp_master->sev_data;
 	if (!sev->snp_inited)
 		return 0;
 
