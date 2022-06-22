@@ -189,6 +189,7 @@ static int sev_cmd_buffer_len(int cmd)
 
 static void snp_leak_pages(unsigned long pfn, unsigned int npages)
 {
+	return;
 	WARN(1, "psc failed, pfn 0x%lx pages %d (leaking)\n", pfn, npages);
 	while (npages--) {
 		memory_failure(pfn, 0);
