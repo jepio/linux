@@ -2487,7 +2487,7 @@ void dump_rmpentry(u64 pfn)
 	int level;
 
 	e = __snp_lookup_rmpentry(pfn, &level);
-	if (!e) {
+	if (IS_ERR_OR_NULL(e)) {
 		pr_alert("failed to read RMP entry pfn 0x%llx\n", pfn);
 		return;
 	}
