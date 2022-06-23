@@ -2529,6 +2529,18 @@ int snp_lookup_rmpentry(u64 pfn, int *level)
 }
 EXPORT_SYMBOL_GPL(snp_lookup_rmpentry);
 
+static u64 hv_enl_psmash(u64 paddr)
+{
+	int ret;
+	asm volatile(
+		"wrmsr\n\t"
+		: "=a"(ret)
+		: "a"(paddr), "c"(MSR_AMD64_VIRT_PSMASH)
+		: "memory", "cc"
+	);
+	return ret;
+}
+
 int psmash(u64 pfn)
 {
 	unsigned long paddr = pfn << PAGE_SHIFT;
@@ -2541,7 +2553,7 @@ int psmash(u64 pfn)
 		return -ENXIO;
 
 	if (svm_hv_enlightened_psmash())
-		return -ENXIO;
+		return hv_enl_psmash(paddr);
 
 	/* Binutils version 2.36 supports the PSMASH mnemonic. */
 	asm volatile(".byte 0xF3, 0x0F, 0x01, 0xFF"
@@ -2585,6 +2597,20 @@ cleanup:
 	return ret;
 }
 
+static u64 hv_enl_rmpupdate(unsigned long paddr, struct rmpupdate *val)
+{
+	int ret;
+	register u64 hi asm("r8") = ((u64 *)val)[1];
+	register u64 lo asm("rdx") = ((u64 *)val)[0];
+	asm volatile(
+		"wrmsr\n\t"
+		: "=a"(ret)
+		: "a"(paddr), "c"(MSR_AMD64_VIRT_RMPUPDATE), "r"(lo), "r"(hi)
+		: "memory", "cc"
+	);
+	return ret;
+}
+
 static int rmpupdate(u64 pfn, struct rmpupdate *val)
 {
 	unsigned long paddr = pfn << PAGE_SHIFT;
@@ -2595,9 +2621,6 @@ static int rmpupdate(u64 pfn, struct rmpupdate *val)
 		return -EINVAL;
 
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
-		return -ENXIO;
-
-	if (svm_hv_enlightened_rmpupdate())
 		return -ENXIO;
 
 	level = RMP_TO_X86_PG_LEVEL(val->pagesize);
@@ -2616,12 +2639,18 @@ static int rmpupdate(u64 pfn, struct rmpupdate *val)
 	}
 
 retry:
+	if (svm_hv_enlightened_rmpupdate()) {
+		ret = hv_enl_rmpupdate(paddr, val);
+		goto skip;
+	}
+
 	/* Binutils version 2.36 supports the RMPUPDATE mnemonic. */
 	asm volatile(".byte 0xF2, 0x0F, 0x01, 0xFE"
 		     : "=a"(ret)
 		     : "a"(paddr), "c"((unsigned long)val)
 		     : "memory", "cc");
 
+skip:
 	if (ret) {
 		if (!retries) {
 			pr_err("rmpupdate failed, ret: %d, pfn: %llx, npages: %d, level: %d, retrying (max: %d)...\n",
