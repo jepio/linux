@@ -620,7 +620,9 @@ static int __snp_cmd_buf_copy(int cmd, void *cmd_buf, bool to_fw, int fw_err)
 	 * no not need to reclaim the page.
 	 */
 	if (from_fw && sev_legacy_cmd_buf_writable(cmd)) {
-		if (snp_set_rmp_state(__pa(cmd_buf), 1, false, true, false))
+		/* TODO: check if vpsp always needs to force reclaim? */
+		const bool reclaim_true = true;
+		if (snp_set_rmp_state(__pa(cmd_buf), 1, false, true, reclaim_true))
 			return -EFAULT;
 
 		/* No need to go further if firmware failed to execute command. */
