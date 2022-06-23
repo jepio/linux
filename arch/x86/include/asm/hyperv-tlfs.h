@@ -254,6 +254,10 @@ enum hv_isolation_type {
 /* TSC invariant control */
 #define HV_X64_MSR_TSC_INVARIANT_CONTROL	0x40000118
 
+/* SNP emulation */
+#define MSR_AMD64_VIRT_RMPUPDATE		0xC001F001
+#define MSR_AMD64_VIRT_PSMASH			0xC001F002
+
 /* Register name aliases for temporary compatibility */
 #define HV_X64_MSR_STIMER0_COUNT	HV_REGISTER_STIMER0_COUNT
 #define HV_X64_MSR_STIMER0_CONFIG	HV_REGISTER_STIMER0_CONFIG
