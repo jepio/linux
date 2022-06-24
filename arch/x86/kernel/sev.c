@@ -2312,6 +2312,20 @@ static __init void mfdm_enable(void *arg)
 	__mfdm_enable(smp_processor_id());
 }
 
+static bool hv_shadow_rmptable(u64 *start, u64 *len)
+{
+	u64 nr_pages = totalram_pages();
+	u64 calc_rmp_sz = (nr_pages << 4) + RMPTABLE_CPU_BOOKKEEPING_SZ;
+	void *rmptable = vmalloc(calc_rmp_sz);
+	if (!rmptable) {
+		pr_err("Failed to allocate RMP table of size %lld\n", calc_rmp_sz);
+		return false;
+	}
+	*start = (u64)rmptable;
+	*len = calc_rmp_sz;
+	return true;
+}
+
 static bool get_rmptable_info(u64 *start, u64 *len)
 {
 	u64 calc_rmp_sz, rmp_sz, rmp_base, rmp_end, nr_pages;
@@ -2367,6 +2381,10 @@ static __init int __snp_rmptable_init(void)
 			pr_err("Failed to map RMP table 0x%llx+0x%llx\n", rmp_base, sz);
 			return 1;
 		}
+	} else {
+		if (!hv_shadow_rmptable(&rmp_base, &sz))
+			return 1;
+		start = (void *)rmp_base;
 	}
 
 	/*
@@ -2377,11 +2395,8 @@ static __init int __snp_rmptable_init(void)
 	if (val & MSR_AMD64_SYSCFG_SNP_EN)
 		goto skip_enable;
 
-	if (has_rmp_table) {
-		/* Initialize the RMP table to zero */
-		memset(start, 0, sz);
-
-	}
+	/* Initialize the RMP table to zero */
+	memset(start, 0, sz);
 
 	/* Flush the caches to ensure that data is written before SNP is enabled. */
 	wbinvd_on_all_cpus();
@@ -2393,10 +2408,8 @@ static __init int __snp_rmptable_init(void)
 	on_each_cpu(snp_enable, NULL, 1);
 
 skip_enable:
-	if (has_rmp_table) {
-		rmptable_start = (unsigned long)start;
-		rmptable_end = rmptable_start + sz - 1;
-	}
+	rmptable_start = (unsigned long)start;
+	rmptable_end = rmptable_start + sz - 1;
 
 	return 0;
 }
@@ -2451,9 +2464,6 @@ static struct rmpentry *__snp_lookup_rmpentry(u64 pfn, int *level)
 		return ERR_PTR(-EINVAL);
 
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
-		return ERR_PTR(-ENXIO);
-
-	if (svm_hv_no_rmp_table())
 		return ERR_PTR(-ENXIO);
 
 	vaddr = rmptable_start + rmptable_page_offset(paddr);
@@ -2672,6 +2682,20 @@ skip:
 			pr_err("Failed to map pfn 0x%llx pages %d in direct_map\n",
 			       pfn, npages);
 			return -EFAULT;
+		}
+	}
+
+	if (!ret && svm_hv_no_rmp_table()) {
+		int level;
+		struct rmpentry *entry = __snp_lookup_rmpentry(pfn, &level);
+		if (IS_ERR_OR_NULL(entry)) {
+			pr_err("shadow rmptable logic wrong for pfn %lld: %d\n", pfn, PTR_ERR_OR_ZERO(entry));
+		} else {
+			entry->info.assigned = val->assigned;
+			entry->info.pagesize = val->pagesize;
+			entry->info.immutable = val->immutable;
+			entry->info.gpa = val->gpa;
+			entry->info.asid = val->asid;
 		}
 	}
 
