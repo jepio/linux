@@ -400,6 +400,7 @@
 #define X86_FEATURE_SEV_ES		(19*32+ 3) /* AMD Secure Encrypted Virtualization - Encrypted State */
 #define X86_FEATURE_SEV_SNP		(19*32+4)  /* AMD Secure Encrypted Virtualization - Secure Nested Paging */
 #define X86_FEATURE_SME_COHERENT	(19*32+10) /* "" AMD hardware-enforced cache coherency */
+#define X86_FEATURE_NESTED_VIRT_SNP_MSR (19*32+29) /* Virtualizable RMPUPDATE and PSMASH MSR available */
 
 /*
  * BUG word(s)

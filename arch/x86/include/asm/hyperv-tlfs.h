@@ -148,8 +148,8 @@
 #define HV_X64_NESTED_ENLIGHTENED_TLB			BIT(22)
 
 /* Nested SNP on Hyper-V */
-#define HV_X64_NESTED_ENLIGHTENED_RMPUPDATE_PSMASH      BIT(23)
-#define HV_X64_NESTED_NO_RMP_TABLE                      BIT(24)
+#define HV_X64_NESTED_NO_RMP_TABLE                      BIT(23)
+#define HV_X64_ENLIGHTENED_SEV_SWAP                     BIT(24)
 
 /* HYPERV_CPUID_ISOLATION_CONFIG.EAX bits. */
 #define HV_PARAVISOR_PRESENT				BIT(0)
