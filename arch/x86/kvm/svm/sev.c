@@ -2781,6 +2781,9 @@ void __init sev_hardware_setup(void)
 	pr_info("SEV-ES %ssupported: %u ASIDs\n",
 		sev_snp_supported ? "and SEV-SNP " : "", sev_es_asid_count);
 
+	if (boot_cpu_has(X86_FEATURE_NESTED_VIRT_SNP_MSR))
+		pr_info("SEV-SNP virtual RMPUPDATE MSR supported\n");
+
 out:
 	sev_enabled = sev_supported;
 	sev_es_enabled = sev_es_supported;

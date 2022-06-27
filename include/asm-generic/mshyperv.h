@@ -266,11 +266,11 @@ static inline bool svm_hv_no_rmp_table(void)
 }
 static inline bool svm_hv_enlightened_rmpupdate(void)
 {
-       return ms_hyperv.nested_features & HV_X64_NESTED_ENLIGHTENED_RMPUPDATE_PSMASH;
+       return boot_cpu_has(X86_FEATURE_NESTED_VIRT_SNP_MSR);
 }
 static inline bool svm_hv_enlightened_psmash(void)
 {
-       return ms_hyperv.nested_features & HV_X64_NESTED_ENLIGHTENED_RMPUPDATE_PSMASH;
+       return boot_cpu_has(X86_FEATURE_NESTED_VIRT_SNP_MSR);
 }
 
 void hyperv_report_panic(struct pt_regs *regs, long err, bool in_die);
