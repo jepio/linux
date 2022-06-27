@@ -2562,8 +2562,26 @@ int psmash(u64 pfn)
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
 		return -ENXIO;
 
-	if (svm_hv_enlightened_psmash())
-		return hv_enl_psmash(paddr);
+	if (svm_hv_enlightened_psmash()) {
+		ret = hv_enl_psmash(paddr);
+		if (!ret && svm_hv_no_rmp_table()) {
+			int level;
+			struct rmpentry *entry = __snp_lookup_rmpentry(pfn, &level);
+			if (IS_ERR_OR_NULL(entry)) {
+				pr_err("psmash shadow rmptable logic wrong for pfn %lld: %d\n", pfn, PTR_ERR_OR_ZERO(entry));
+			} else {
+				if (level == PG_LEVEL_2M && paddr == (paddr & PMD_MASK)) {
+					int i;
+					for (i = 1; i < PTRS_PER_PMD; i++) {
+						struct rmpentry *it = &entry[i];
+						*it = *entry;
+						it->info.gpa = entry->info.gpa + i * PAGE_SIZE;
+					}
+				}
+			}
+		}
+		return ret;
+	}
 
 	/* Binutils version 2.36 supports the PSMASH mnemonic. */
 	asm volatile(".byte 0xF3, 0x0F, 0x01, 0xFF"
