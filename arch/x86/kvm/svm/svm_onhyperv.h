@@ -54,6 +54,9 @@ static inline void svm_hv_hardware_setup(void)
 		svm_x86_ops.enable_direct_tlbflush =
 				svm_hv_enable_direct_tlbflush;
 	}
+	if (ms_hyperv.nested_features & HV_X64_ENLIGHTENED_SEV_SWAP) {
+		pr_info("kvm: Hyper-V Enlightened SEV swap\n");
+	}
 }
 
 static inline void svm_hv_vmcb_dirty_nested_enlightenments(

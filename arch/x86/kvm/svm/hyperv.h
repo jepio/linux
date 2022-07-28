@@ -19,7 +19,8 @@ struct hv_enlightenments {
 		u32 nested_flush_hypercall:1;
 		u32 msr_bitmap:1;
 		u32 enlightened_npt_tlb: 1;
-		u32 reserved:29;
+		u32 enlightened_sev_swap : 1;
+		u32 reserved:28;
 	} __packed hv_enlightenments_control;
 	u32 hv_vp_id;
 	u64 hv_vm_id;
