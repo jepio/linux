@@ -1289,8 +1289,12 @@ static void snp_set_hsave_pa(void *arg)
 
 static int __sev_snp_init_locked(int *error)
 {
+	struct sev_data_snp_platform_status_buf buf;
+	struct sev_user_data_snp_status status;
 	struct psp_device *psp = psp_master;
 	struct sev_device *sev;
+	struct page *status_page;
+	void *data = NULL;
 	int rc = 0;
 
 	if (!psp || !psp->sev_data)
@@ -1307,6 +1311,21 @@ static int __sev_snp_init_locked(int *error)
 	 */
 	on_each_cpu(snp_set_hsave_pa, NULL, 1);
 
+
+/*
+	status_page = alloc_page(GFP_KERNEL_ACCOUNT);
+	if (!status_page)
+		return -ENOMEM;
+	data = page_address(status_page);
+	buf.status_paddr = __psp_pa(data);
+	rc = __sev_do_cmd_locked(SEV_CMD_SNP_PLATFORM_STATUS, &buf, error);
+	if (rc)
+		return rc;
+	memcpy(&status, data, sizeof(status));
+	dev_dbg(sev->dev, "SEV-SNP firmware state: %d\n", status.state);
+	if (status.state == SEV_STATE_INIT)
+		goto skip;
+*/
 	/* Issue the SNP_INIT firmware command. */
 	rc = __sev_do_cmd_locked(SEV_CMD_SNP_INIT, NULL, error);
 	if (rc)
@@ -1318,6 +1337,7 @@ static int __sev_snp_init_locked(int *error)
 	if (rc)
 		return rc;
 
+//skip:
 	sev->snp_inited = true;
 	dev_dbg(sev->dev, "SEV-SNP firmware initialized\n");
 
