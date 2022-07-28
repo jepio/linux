@@ -22,18 +22,31 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/acpi.h>
-#include <linux/timer.h>
+#include <linux/iopoll.h>
 
 #include "ccp-dev.h"
 #include "psp-dev.h"
+#include "sev-dev.h"
 
 struct sp_platform {
 	int coherent;
 	unsigned int irq_count;
 	bool is_vpsp;
-	struct timer_list timer;
 	struct sp_device *sp;
 };
+
+static int vpsp_wait_event(struct sev_device *sev, unsigned int timeout)
+{
+	struct psp_device *psp = sev->psp;
+	unsigned int status;
+	void *__iomem reg = psp->io_regs + psp->vdata->intsts_reg;
+	int err;
+	err = readl_poll_timeout_atomic(reg, status, status & SEV_CMD_COMPLETE, 2, 100000);
+	if (!err)
+		writel(status, reg);
+	return status;
+}
+
 static struct sp_device *sp_dev_master;
 
 static const struct sp_dev_vdata dev_vdata[] = {
@@ -256,19 +269,6 @@ static int sp_get_irqs(struct sp_device *sp)
 	return 0;
 }
 
-extern irqreturn_t psp_irq_handler(int irq, void *data);
-
-static void sp_vpsp_timer(struct timer_list *timer)
-{
-	struct sp_platform *sp_platform = container_of(timer, struct sp_platform, timer);
-	struct sp_device *sp = sp_platform->sp;
-	if (sp->psp_data) {
-		psp_irq_handler(0, sp->psp_data);
-	}
-	mod_timer(timer, jiffies + msecs_to_jiffies(1));
-}
-
-
 static int sp_platform_probe(struct platform_device *pdev)
 {
 	struct sp_device *sp;
@@ -350,13 +350,13 @@ static int sp_platform_probe(struct platform_device *pdev)
 	if (ret)
 		goto e_err;
 
-	dev_notice(dev, "enabled\n");
-	/* TODO: figure out how to get the IRQ working */
-	if (sp_platform->is_vpsp) {
-		sp_platform->sp = sp;
-		timer_setup(&sp_platform->timer, sp_vpsp_timer, 0);
-		sp_vpsp_timer(&sp_platform->timer);
+	{
+		struct psp_device *psp = sp->psp_data;
+		struct sev_device *sev = psp->sev_data;
+		sev_set_poll_handler(sev, vpsp_wait_event);
 	}
+
+	dev_notice(dev, "enabled\n");
 
 	return 0;
 
@@ -372,9 +372,6 @@ static int sp_platform_remove(struct platform_device *pdev)
 	struct sp_platform *sp_platform = sp->dev_specific;
 
 	sp_destroy(sp);
-
-	if (sp_platform->is_vpsp)
-		del_timer_sync(&sp_platform->timer);
 
 	dev_notice(dev, "disabled\n");
 
