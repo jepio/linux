@@ -106,8 +106,12 @@ static int sev_wait_cmd_ioc(struct sev_device *sev,
 {
 	int ret;
 
-	ret = wait_event_timeout(sev->int_queue,
-			sev->int_rcvd, timeout * HZ);
+	if (sev->poll_handler) {
+		ret = sev->poll_handler(sev, timeout);
+	} else {
+		ret = wait_event_timeout(sev->int_queue,
+				sev->int_rcvd, timeout * HZ);
+	}
 	if (!ret)
 		return -ETIMEDOUT;
 
@@ -2021,4 +2025,9 @@ void sev_pci_exit(void)
 		return;
 
 	sev_firmware_shutdown(sev);
+}
+
+void sev_set_poll_handler(struct sev_device *sev, sev_poll_handler_t poll_handler)
+{
+	sev->poll_handler = poll_handler;
 }
