@@ -23,7 +23,8 @@ struct hv_enlightenments {
 		u32 nested_flush_hypercall:1;
 		u32 msr_bitmap:1;
 		u32 enlightened_npt_tlb: 1;
-		u32 reserved:29;
+		u32 enlightened_sev_swap : 1;
+		u32 reserved:28;
 	} __packed hv_enlightenments_control;
 	u32 hv_vp_id;
 	u64 hv_vm_id;
@@ -73,6 +74,9 @@ static inline void svm_hv_hardware_setup(void)
 		}
 		svm_x86_ops.enable_direct_tlbflush =
 				svm_hv_enable_direct_tlbflush;
+	}
+	if (ms_hyperv.nested_features & HV_X64_ENLIGHTENED_SEV_SWAP) {
+		pr_info("kvm: Hyper-V Enlightened SEV swap\n");
 	}
 }
 
