@@ -2265,6 +2265,8 @@ static __init void mfdm_enable(void *arg)
 static bool hv_shadow_rmptable(u64 *start, u64 *len)
 {
 	u64 nr_pages = totalram_pages();
+	/* TODO: totalram_pages() appears to be smaller than max pfn */
+	nr_pages <<= 1;
 	u64 calc_rmp_sz = (nr_pages << 4) + RMPTABLE_CPU_BOOKKEEPING_SZ;
 	void *rmptable = vmalloc(calc_rmp_sz);
 	if (!rmptable) {
@@ -2273,6 +2275,7 @@ static bool hv_shadow_rmptable(u64 *start, u64 *len)
 	}
 	*start = (u64)rmptable;
 	*len = calc_rmp_sz;
+	pr_info("shadow RMP table size %llx, total pages %lld\n", calc_rmp_sz, nr_pages);
 	return true;
 }
 
