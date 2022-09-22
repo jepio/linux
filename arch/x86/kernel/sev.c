@@ -42,6 +42,9 @@
 #include <asm/cpuid.h>
 #include <asm/cmdline.h>
 
+#define CREATE_TRACE_POINTS
+#include <asm/trace/sev.h>
+
 #define DR7_RESET_VALUE        0x400
 
 /* AP INIT values as documented in the APM2  section "Processor Initialization State" */
@@ -2550,6 +2553,7 @@ static u64 hv_enl_psmash(u64 paddr)
 		: "a"(paddr), "c"(MSR_AMD64_VIRT_PSMASH)
 		: "memory", "cc"
 	);
+	trace_sev_psmash(paddr, ret);
 	return ret;
 }
 
@@ -2639,6 +2643,7 @@ static u64 hv_enl_rmpupdate(unsigned long paddr, struct rmpupdate *val)
 		: "a"(paddr), "c"(MSR_AMD64_VIRT_RMPUPDATE), "r"(lo), "r"(hi)
 		: "memory", "cc"
 	);
+	trace_sev_rmpupdate(paddr, val, ret);
 	return ret;
 }
 
