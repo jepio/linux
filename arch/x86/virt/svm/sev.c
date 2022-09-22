@@ -30,6 +30,9 @@
 #include <asm/cmdline.h>
 #include <asm/iommu.h>
 
+#define CREATE_TRACE_POINTS
+#include <asm/trace/sev.h>
+
 /*
  * The RMP entry format is not architectural. The format is defined in PPR
  * Family 19h Model 01h, Rev B1 processor.
@@ -371,6 +374,7 @@ static u64 virt_psmash(u64 paddr)
 		: "a"(paddr), "c"(MSR_AMD64_VIRT_PSMASH)
 		: "memory", "cc"
 	);
+	trace_sev_psmash(paddr, ret);
 	return ret;
 }
 
@@ -488,6 +492,7 @@ static u64 virt_rmpupdate(unsigned long paddr, struct rmp_state *val)
 		: "a"(paddr), "c"(MSR_AMD64_VIRT_RMPUPDATE), "r"(lo), "r"(hi)
 		: "memory", "cc"
 	);
+	trace_sev_rmpupdate(paddr, val, ret);
 	return ret;
 }
 
