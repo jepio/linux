@@ -2511,8 +2511,9 @@ int psmash(u64 pfn)
 			if (IS_ERR_OR_NULL(entry)) {
 				pr_err("psmash shadow rmptable logic wrong for pfn %lld: %d\n", pfn, PTR_ERR_OR_ZERO(entry));
 			} else {
-				if (level == PG_LEVEL_2M && paddr == (paddr & PMD_MASK)) {
+				if (level == PG_LEVEL_2M) {
 					int i;
+					entry->info.pagesize = RMP_PG_SIZE_4K;
 					for (i = 1; i < PTRS_PER_PMD; i++) {
 						struct rmpentry *it = &entry[i];
 						*it = *entry;
