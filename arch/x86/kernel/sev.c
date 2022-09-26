@@ -2636,16 +2636,30 @@ skip:
 	}
 
 	if (!ret && svm_hv_no_rmp_table()) {
-		int level;
-		struct rmpentry *entry = __snp_lookup_rmpentry(pfn, &level);
+		int prev_level;
+		struct rmpentry *entry = __snp_lookup_rmpentry(pfn, &prev_level);
 		if (IS_ERR_OR_NULL(entry)) {
 			pr_err("shadow rmptable logic wrong for pfn %lld: %d\n", pfn, PTR_ERR_OR_ZERO(entry));
 		} else {
-			entry->info.assigned = val->assigned;
-			entry->info.pagesize = val->pagesize;
-			entry->info.immutable = val->immutable;
-			entry->info.gpa = val->gpa;
-			entry->info.asid = val->asid;
+			if (level > PG_LEVEL_4K) {
+				int i;
+				struct rmpentry tmp_rmp = {
+					.info = {
+						.assigned = val->assigned,
+					},
+				};
+				for (i = 1; i < PTRS_PER_PMD; i++)
+					entry[i] = tmp_rmp;
+			}
+			if (!val->assigned) {
+				memset(entry, 0, sizeof(*entry));
+			} else {
+				entry->info.assigned = val->assigned;
+				entry->info.pagesize = val->pagesize;
+				entry->info.immutable = val->immutable;
+				entry->info.gpa = val->gpa;
+				entry->info.asid = val->asid;
+			}
 		}
 	}
 
