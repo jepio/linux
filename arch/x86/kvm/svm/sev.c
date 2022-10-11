@@ -2932,21 +2932,17 @@ static inline void svm_unmap_ghcb(struct vcpu_svm *svm, struct kvm_host_map *map
 	sev_post_unmap_gfn(vcpu->kvm, map->gfn, map->pfn);
 }
 
-static void dump_ghcb(struct vcpu_svm *svm)
+static void dump_ghcb(struct vcpu_svm *svm, struct kvm_host_map *map)
 {
-	struct kvm_host_map map;
 	unsigned int nbits;
 	struct ghcb *ghcb;
 
-	if (svm_map_ghcb(svm, &map))
-		return;
-
-	ghcb = map.hva;
+	ghcb = map->hva;
 
 	/* Re-use the dump_invalid_vmcb module parameter */
 	if (!dump_invalid_vmcb) {
 		pr_warn_ratelimited("set kvm_amd.dump_invalid_vmcb=1 to dump internal KVM state.\n");
-		goto e_unmap;
+		return;
 	}
 
 	nbits = sizeof(ghcb->save.valid_bitmap) * 8;
@@ -2961,9 +2957,6 @@ static void dump_ghcb(struct vcpu_svm *svm)
 	pr_err("%-20s%016llx is_valid: %u\n", "sw_scratch",
 	       ghcb->save.sw_scratch, ghcb_sw_scratch_is_valid(ghcb));
 	pr_err("%-20s%*pb\n", "valid_bitmap", nbits, ghcb->save.valid_bitmap);
-
-e_unmap:
-	svm_unmap_ghcb(svm, &map);
 }
 
 static bool sev_es_sync_to_ghcb(struct vcpu_svm *svm)
@@ -3203,7 +3196,7 @@ vmgexit_err:
 	} else {
 		vcpu_unimpl(vcpu, "vmgexit: exit code %#llx input is not valid\n",
 			    *exit_code);
-		dump_ghcb(svm);
+		dump_ghcb(svm, &map);
 	}
 
 	/* Clear the valid entries fields */
