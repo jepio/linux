@@ -16,6 +16,7 @@
 #include <linux/kthread.h>
 #include <linux/sched.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 #include <linux/spinlock.h>
 #include <linux/delay.h>
 #include <linux/ccp.h>
@@ -23,6 +24,9 @@
 #include <linux/of_address.h>
 #include <linux/acpi.h>
 #include <linux/iopoll.h>
+
+// TODO: this driver needs to build for arm64
+#include <asm/cpu.h>
 
 #include "ccp-dev.h"
 #include "psp-dev.h"
@@ -108,7 +112,115 @@ static struct resource vpsp_resources[] = {
 };
 
 #ifdef CONFIG_ACPI
-static int vsps_parse_aspt(struct device *dev)
+
+#define PSP_ACPI_DATA_SHIFT 0
+#define PSP_ACPI_DATA_MASK GENMASK(15, 0)
+#define PSP_ACPI_CMDID_SHIFT 16
+#define PSP_ACPI_CMDID_MASK GENMASK(25, 16) 
+#define PSP_ACPI_STATUS_SHIFT 26
+#define PSP_ACPI_STATUS_MASK GENMASK(30, 26)
+#define PSP_ACPI_RESPONSE_BIT BIT(31)
+
+#define PSP_ACPI_VECTOR_SHIFT 0
+#define PSP_ACPI_VECTOR_MASK GENMASK(7, 0)
+#define PSP_ACPI_MBOX_IRQID_SHIFT 10
+#define PSP_ACPI_MBOX_IRQID_MASK GENMASK(15, 10)
+
+#define PSP_ACPI_IRQ_EN_BIT BIT(0)
+#define PSP_ACPI_IRQ_EN_MBOX_IRQID_SHIFT 10
+#define PSP_ACPI_IRQ_EN_MBOX_IRQID_MASK GENMASK(15, 10)
+
+// AMD Secure Processor
+enum ASP_CMDID {
+	ASP_CMDID_PART1  = 0x82,
+	ASP_CMDID_PART2  = 0x83,
+	ASP_CMDID_PART3  = 0x84,
+	ASP_CMDID_IRQ_EN = 0x85,
+};
+
+enum ASP_CMD_STATUS {
+	ASP_CMD_STATUS_SUCCESS = 0x0,
+	ASP_CMD_STATUS_INVALID_CMD = 0x1,
+	ASP_CMD_STATUS_INVALID_PARAM = 0x2,
+	ASP_CMD_STATUS_INVALID_FW_STATE = 0x3,
+	ASP_CMD_STATUS_FAILURE = 0x1F,
+};
+
+static int psp_sync_cmd(void __iomem *reg, u8 cmd, u16 data)
+{
+	u32 val = 0;
+	int err;
+
+	val |= data & PSP_ACPI_DATA_MASK;
+	val |= (cmd << PSP_ACPI_CMDID_SHIFT) & PSP_ACPI_CMDID_MASK;
+	iowrite32(val, reg);
+	err = readl_poll_timeout_atomic(reg, val, val & PSP_ACPI_RESPONSE_BIT, 2, 10000);
+	if (err < 0)
+		return err;
+	return (val & PSP_ACPI_STATUS_MASK) >> PSP_ACPI_STATUS_SHIFT;
+}
+
+static int vpsp_set_irq_enable(struct sp_device *sp, bool irq_en)
+{
+	const struct psp_vdata *psp = sp->dev_vdata->psp_vdata;
+	u8 mbox_irq_id = psp->sev->mbox_irq_id;
+	void __iomem *reg = sp->io_map + psp->acpi_cmdresp_reg;
+	u16 val = 0;
+	int err;
+
+	val |= irq_en ? PSP_ACPI_IRQ_EN_BIT : 0;
+	val |= (mbox_irq_id << PSP_ACPI_IRQ_EN_MBOX_IRQID_SHIFT) & PSP_ACPI_IRQ_EN_MBOX_IRQID_MASK;
+	err = psp_sync_cmd(reg, ASP_CMDID_IRQ_EN, val);
+	if (err != ASP_CMD_STATUS_SUCCESS) {
+		dev_err(sp->dev, "ASP_CMDID_IRQ_EN failed: %d\n", err);
+		return -EIO;
+	}
+	return 0;
+}
+static int vpsp_enable_irq(struct sp_device *sp)
+{
+	return vpsp_set_irq_enable(sp, true);
+}
+static int vpsp_disable_irq(struct sp_device *sp)
+{
+	return vpsp_set_irq_enable(sp, false);
+}
+
+static int vpsp_configure_irq(struct sp_device *sp, u8 vector)
+{
+	const struct psp_vdata *psp = sp->dev_vdata->psp_vdata;
+	unsigned int dest_cpu = boot_cpu_physical_apicid;
+	u8 mbox_irq_id = psp->sev->mbox_irq_id;
+	void __iomem *reg = sp->io_map + psp->acpi_cmdresp_reg;
+	int err;
+
+	u16 part1 = dest_cpu;
+	u16 part2 = dest_cpu >> 16;
+	u16 part3 = 0;
+
+	part3 |= vector;
+	part3 |= (mbox_irq_id << PSP_ACPI_MBOX_IRQID_SHIFT) & PSP_ACPI_MBOX_IRQID_MASK;
+	
+	err = psp_sync_cmd(reg, ASP_CMDID_PART1, part1);
+	if (err != ASP_CMD_STATUS_SUCCESS) {
+		dev_err(sp->dev, "ASP_CMDID_PART1 failed: %d\n", err);
+		return -EIO;
+	}
+	err = psp_sync_cmd(reg, ASP_CMDID_PART2, part2);
+	if (err != ASP_CMD_STATUS_SUCCESS) {
+		dev_err(sp->dev, "ASP_CMDID_PART2 failed: %d\n", err);
+		return -EIO;
+	}
+	err = psp_sync_cmd(reg, ASP_CMDID_PART3, part3);
+	if (err != ASP_CMD_STATUS_SUCCESS) {
+		dev_err(sp->dev, "ASP_CMDID_PART3 failed: %d\n", err);
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static int vpsp_parse_aspt(struct device *dev)
 {
 	struct acpi_aspt_acpi_mbox_regs acpiregs = {};
 	struct acpi_aspt_sev_mbox_regs sevregs = {};
@@ -166,12 +278,14 @@ exit:
 			.cmdresp_reg = sevregs.cmd_resp_reg_addr - base,
 			.cmdbuff_addr_lo_reg = sevregs.cmd_buf_lo_reg_addr - base,
 			.cmdbuff_addr_hi_reg = sevregs.cmd_buf_hi_reg_addr - base,
+			.mbox_irq_id = sevregs.mbox_irq_id,
 		};
 		const struct psp_vdata tmp_vpspv1 = {
 			.sev = &vsevv1,
 			.feature_reg = gregs.feature_reg_addr - base,
 			.inten_reg = gregs.irq_en_reg_addr - base,
 			.intsts_reg = gregs.irq_st_reg_addr - base,
+			.acpi_cmdresp_reg = acpiregs.cmd_resp_reg_addr - base,
 		};
 		memcpy(&vsevv1, &tmp_vsevv1, sizeof(struct sev_vdata));
 		memcpy(&vpspv1, &tmp_vpspv1, sizeof(struct psp_vdata));
@@ -183,6 +297,8 @@ exit:
 	dev_info(dev, "SEV  cmd_resp_reg_addr:\t%x\n", vsevv1.cmdresp_reg);
 	dev_info(dev, "SEV  cmd_buf_lo_reg_addr:\t%x\n", vsevv1.cmdbuff_addr_lo_reg);
 	dev_info(dev, "SEV  cmd_buf_hi_reg_addr:\t%x\n", vsevv1.cmdbuff_addr_hi_reg);
+	dev_info(dev, "SEV  mbox_irq_id:\t\t%d\n", vsevv1.mbox_irq_id);
+	dev_info(dev, "ACPI cmd_resp_reg_addr:\t%x\n", vpspv1.acpi_cmdresp_reg);
 	return err;
 }
 #else
@@ -242,8 +358,11 @@ static int sp_get_irqs(struct sp_device *sp)
 	struct device *dev = sp->dev;
 	struct platform_device *pdev = to_platform_device(dev);
 	int ret;
-	if (sp_platform->is_vpsp)
+	if (sp_platform->is_vpsp) {
+		sp->psp_irq = 10;
+		sp->ccp_irq = 10;
 		return 0;
+	}
 
 	sp_platform->irq_count = platform_irq_count(pdev);
 
@@ -292,7 +411,7 @@ static int sp_platform_probe(struct platform_device *pdev)
 	if (!sp->dev_vdata && pdev->id_entry) {
 		sp->dev_vdata = (struct sp_dev_vdata *)pdev->id_entry->driver_data;
 		if (sp->dev_vdata == &vpsp_vdata[0]) {
-			ret = vsps_parse_aspt(dev);
+			ret = vpsp_parse_aspt(dev);
 			if (ret)
 				goto e_err;
 			sp_platform->is_vpsp = true;
@@ -358,6 +477,25 @@ static int sp_platform_probe(struct platform_device *pdev)
 
 	dev_notice(dev, "enabled\n");
 
+	{
+		dev_info(dev, "enable irq: %d\n", vpsp_enable_irq(sp));
+		struct sev_user_data_status status;
+		for (int i = 0; i < 5; i++) {
+			int error = 0;
+			int ret;
+			vpsp_configure_irq(sp, 60 + i);
+			ret = sev_platform_status(&status, &error);
+			if (ret) {
+				dev_err(dev, "set_platform_status: %#x\n", error);
+			}
+		}
+	}
+	{
+		//irq_hw_number_t hwirq = irqd_to_hwirq(irq_get_irq_data(sp->psp_irq));
+		//dev_info(dev, "using hwirq %lu\n", (unsigned long)hwirq);
+	}
+	
+
 	return 0;
 
 e_err:
@@ -372,6 +510,8 @@ static int sp_platform_remove(struct platform_device *pdev)
 	struct sp_platform *sp_platform = sp->dev_specific;
 
 	sp_destroy(sp);
+	if (sp_platform->is_vpsp)
+		vpsp_disable_irq(sp);
 
 	dev_notice(dev, "disabled\n");
 
