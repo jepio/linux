@@ -11,6 +11,7 @@
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/platform_device.h>
+#include <linux/platform_data/psp.h>
 #include <linux/ioport.h>
 #include <linux/dma-mapping.h>
 #include <linux/kthread.h>
@@ -107,10 +108,7 @@ static const struct platform_device_id sp_plat_match[] = {
 };
 MODULE_DEVICE_TABLE(platform, sp_plat_match);
 
-static struct resource vpsp_resources[] = {
-	{},
-};
-
+/*
 #ifdef CONFIG_ACPI
 
 #define PSP_ACPI_DATA_SHIFT 0
@@ -219,94 +217,9 @@ static int vpsp_configure_irq(struct sp_device *sp, u8 vector)
 
 	return 0;
 }
-
-static int vpsp_parse_aspt(struct device *dev)
-{
-	struct acpi_aspt_acpi_mbox_regs acpiregs = {};
-	struct acpi_aspt_sev_mbox_regs sevregs = {};
-	struct acpi_aspt_global_regs gregs = {};
-	struct acpi_aspt_header *entry, *end;
-	struct acpi_table_aspt *aspt;
-	acpi_status status;
-	unsigned long long base;
-	int err = 0;
-
-	status = acpi_get_table(ACPI_SIG_ASPT, 0, (struct acpi_table_header **)&aspt);
-	if (ACPI_FAILURE(status)) {
-		const char *msg = acpi_format_exception(status);
-		dev_err(dev, "failed to get ASPT table: %s\n", msg);
-		return -ENODEV;
-	}
-	if (aspt->header.revision != ASPT_REVISION_ID) {
-		dev_err(dev, "wrong ASPT revision: %d\n", (int)aspt->header.revision);
-		err = -ENODEV;
-		goto exit;
-	}
-	entry = (struct acpi_aspt_header *)(aspt + 1);
-	end = (struct acpi_aspt_header *)((void *)aspt + aspt->header.length);
-	while (entry < end) {
-		if (((void *)entry + entry->length) > (void *)end) {
-			dev_err(dev, "error parsing ASPT\n");
-			err = -ENODEV;
-			goto exit;
-		}
-		switch (entry->type) {
-		case ACPI_ASPT_TYPE_GLOBAL_REGS:
-			memcpy(&gregs, entry, entry->length);
-			break;
-		case ACPI_ASPT_TYPE_SEV_MBOX_REGS:
-			memcpy(&sevregs, entry, entry->length);
-			break;
-		case ACPI_ASPT_TYPE_ACPI_MBOX_REGS:
-			memcpy(&acpiregs, entry, entry->length);
-			break;
-		}
-		entry = (struct acpi_aspt_header *)((void *)entry + entry->length);
-	}
-exit:
-	if (!gregs.header.length || !sevregs.header.length || !acpiregs.header.length) {
-		dev_err(dev, "missing ASPT table entry: %d %d %d\n", (int)gregs.header.length, (int)sevregs.header.length, (int)acpiregs.header.length);
-		err = -ENODEV;
-		goto exit;
-	}
-	acpi_put_table((struct acpi_table_header *)aspt);
-	base = ALIGN_DOWN(gregs.feature_reg_addr, PAGE_SIZE);
-
-	vpsp_resources[0] = ((struct resource)DEFINE_RES_MEM(base, PAGE_SIZE));
-	{
-		const struct sev_vdata tmp_vsevv1 = {
-			.cmdresp_reg = sevregs.cmd_resp_reg_addr - base,
-			.cmdbuff_addr_lo_reg = sevregs.cmd_buf_lo_reg_addr - base,
-			.cmdbuff_addr_hi_reg = sevregs.cmd_buf_hi_reg_addr - base,
-			.mbox_irq_id = sevregs.mbox_irq_id,
-		};
-		const struct psp_vdata tmp_vpspv1 = {
-			.sev = &vsevv1,
-			.feature_reg = gregs.feature_reg_addr - base,
-			.inten_reg = gregs.irq_en_reg_addr - base,
-			.intsts_reg = gregs.irq_st_reg_addr - base,
-			.acpi_cmdresp_reg = acpiregs.cmd_resp_reg_addr - base,
-		};
-		memcpy(&vsevv1, &tmp_vsevv1, sizeof(struct sev_vdata));
-		memcpy(&vpspv1, &tmp_vpspv1, sizeof(struct psp_vdata));
-	}
-	dev_info(dev, "%pR\n", &vpsp_resources[0]);
-	dev_info(dev, "GLBL feature_reg_addr:\t%x\n", vpspv1.feature_reg);
-	dev_info(dev, "GLBL irq_en_reg_addr:\t%x\n", vpspv1.inten_reg);
-	dev_info(dev, "GLBL irq_st_reg_addr:\t%x\n", vpspv1.intsts_reg);
-	dev_info(dev, "SEV  cmd_resp_reg_addr:\t%x\n", vsevv1.cmdresp_reg);
-	dev_info(dev, "SEV  cmd_buf_lo_reg_addr:\t%x\n", vsevv1.cmdbuff_addr_lo_reg);
-	dev_info(dev, "SEV  cmd_buf_hi_reg_addr:\t%x\n", vsevv1.cmdbuff_addr_hi_reg);
-	dev_info(dev, "SEV  mbox_irq_id:\t\t%d\n", vsevv1.mbox_irq_id);
-	dev_info(dev, "ACPI cmd_resp_reg_addr:\t%x\n", vpspv1.acpi_cmdresp_reg);
-	return err;
-}
-#else
-static int vpsp_parse_aspt(struct device *dev)
-{
-	return -ENODEV;
-}
 #endif
+*/
+
 static void psp_set_master(struct sp_device *sp)
 {
 	if (!sp_dev_master) {
@@ -411,9 +324,22 @@ static int sp_platform_probe(struct platform_device *pdev)
 	if (!sp->dev_vdata && pdev->id_entry) {
 		sp->dev_vdata = (struct sp_dev_vdata *)pdev->id_entry->driver_data;
 		if (sp->dev_vdata == &vpsp_vdata[0]) {
-			ret = vpsp_parse_aspt(dev);
-			if (ret)
-				goto e_err;
+			struct psp_platform_data *pdata = dev_get_platdata(dev);
+			vpspv1.feature_reg = pdata->feature_reg;
+			vpspv1.inten_reg = pdata->irq_en_reg;
+			vpspv1.intsts_reg = pdata->irq_st_reg;
+			vsevv1.cmdresp_reg = pdata->sev_cmd_resp_reg;
+			vsevv1.cmdbuff_addr_lo_reg = pdata->sev_cmd_buf_lo_reg;
+			vsevv1.cmdbuff_addr_hi_reg = pdata->sev_cmd_buf_hi_reg;
+			dev_info(dev, "%pR\n",  platform_get_resource(pdev, IORESOURCE_MEM, 0));
+			dev_info(dev, "GLBL feature_reg_addr:\t%x\n", vpspv1.feature_reg);
+			dev_info(dev, "GLBL irq_en_reg_addr:\t%x\n", vpspv1.inten_reg);
+			dev_info(dev, "GLBL irq_st_reg_addr:\t%x\n", vpspv1.intsts_reg);
+			dev_info(dev, "SEV  cmd_resp_reg_addr:\t%x\n", vsevv1.cmdresp_reg);
+			dev_info(dev, "SEV  cmd_buf_lo_reg_addr:\t%x\n", vsevv1.cmdbuff_addr_lo_reg);
+			dev_info(dev, "SEV  cmd_buf_hi_reg_addr:\t%x\n", vsevv1.cmdbuff_addr_hi_reg);
+			dev_info(dev, "SEV  mbox_irq_id:\t\t%d\n", pdata->mbox_irq_id);
+			dev_info(dev, "ACPI cmd_resp_reg_addr:\t%x\n", pdata->acpi_cmd_resp_reg);
 			sp_platform->is_vpsp = true;
 		}
 
@@ -424,11 +350,7 @@ static int sp_platform_probe(struct platform_device *pdev)
 		goto e_err;
 	}
 
-	if (sp_platform->is_vpsp) {
-		sp->io_map = devm_ioremap_resource(dev, vpsp_resources);
-	} else {
-		sp->io_map = devm_platform_ioremap_resource(pdev, 0);
-	}
+	sp->io_map = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(sp->io_map)) {
 		ret = PTR_ERR(sp->io_map);
 		goto e_err;
@@ -477,25 +399,6 @@ static int sp_platform_probe(struct platform_device *pdev)
 
 	dev_notice(dev, "enabled\n");
 
-	{
-		dev_info(dev, "enable irq: %d\n", vpsp_enable_irq(sp));
-		struct sev_user_data_status status;
-		for (int i = 0; i < 5; i++) {
-			int error = 0;
-			int ret;
-			vpsp_configure_irq(sp, 60 + i);
-			ret = sev_platform_status(&status, &error);
-			if (ret) {
-				dev_err(dev, "set_platform_status: %#x\n", error);
-			}
-		}
-	}
-	{
-		//irq_hw_number_t hwirq = irqd_to_hwirq(irq_get_irq_data(sp->psp_irq));
-		//dev_info(dev, "using hwirq %lu\n", (unsigned long)hwirq);
-	}
-	
-
 	return 0;
 
 e_err:
@@ -510,8 +413,10 @@ static int sp_platform_remove(struct platform_device *pdev)
 	struct sp_platform *sp_platform = sp->dev_specific;
 
 	sp_destroy(sp);
+/*
 	if (sp_platform->is_vpsp)
 		vpsp_disable_irq(sp);
+*/
 
 	dev_notice(dev, "disabled\n");
 

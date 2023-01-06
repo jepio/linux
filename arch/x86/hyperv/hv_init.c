@@ -29,6 +29,7 @@
 #include <linux/cpuhotplug.h>
 #include <linux/syscore_ops.h>
 #include <linux/platform_device.h>
+#include <linux/platform_data/psp.h>
 #include <clocksource/hyperv_timer.h>
 #include <linux/highmem.h>
 #include <linux/swiotlb.h>
@@ -533,15 +534,86 @@ common_free:
 	hv_common_free();
 }
 
+struct irq_domain *hv_psp_domain;
+void hv_psp_irq(void)
+{
+	if (hv_psp_domain)
+		generic_handle_domain_irq(hv_psp_domain, 0);
+}
+
 static struct platform_device hv_vpsp_device = {
 	.name           = "hv-vpsp",
 	.id             = -1,
 };
 
+static int vpsp_parse_aspt(struct resource *res, struct psp_platform_data *pdata)
+{
+	struct acpi_aspt_acpi_mbox_regs acpiregs = {};
+	struct acpi_aspt_sev_mbox_regs sevregs = {};
+	struct acpi_aspt_global_regs gregs = {};
+	struct acpi_aspt_header *entry, *end;
+	struct acpi_table_aspt *aspt;
+	acpi_status status;
+	unsigned long long base;
+	int err = 0;
+
+	status = acpi_get_table(ACPI_SIG_ASPT, 0, (struct acpi_table_header **)&aspt);
+	if (ACPI_FAILURE(status)) {
+		const char *msg = acpi_format_exception(status);
+		pr_err("failed to get ASPT table: %s\n", msg);
+		return -ENODEV;
+	}
+	if (aspt->header.revision != ASPT_REVISION_ID) {
+		pr_err("wrong ASPT revision: %d\n", (int)aspt->header.revision);
+		err = -ENODEV;
+		goto exit;
+	}
+	entry = (struct acpi_aspt_header *)(aspt + 1);
+	end = (struct acpi_aspt_header *)((void *)aspt + aspt->header.length);
+	while (entry < end) {
+		if (((void *)entry + entry->length) > (void *)end) {
+			pr_err("error parsing ASPT\n");
+			err = -ENODEV;
+			goto exit;
+		}
+		switch (entry->type) {
+		case ACPI_ASPT_TYPE_GLOBAL_REGS:
+			memcpy(&gregs, entry, entry->length);
+			break;
+		case ACPI_ASPT_TYPE_SEV_MBOX_REGS:
+			memcpy(&sevregs, entry, entry->length);
+			break;
+		case ACPI_ASPT_TYPE_ACPI_MBOX_REGS:
+			memcpy(&acpiregs, entry, entry->length);
+			break;
+		}
+		entry = (struct acpi_aspt_header *)((void *)entry + entry->length);
+	}
+	if (!gregs.header.length || !sevregs.header.length || !acpiregs.header.length) {
+		pr_err("missing ASPT table entry: %d %d %d\n", (int)gregs.header.length, (int)sevregs.header.length, (int)acpiregs.header.length);
+		err = -ENODEV;
+		goto exit;
+	}
+	base = ALIGN_DOWN(gregs.feature_reg_addr, PAGE_SIZE);
+
+	*res = (struct resource)DEFINE_RES_MEM(base, PAGE_SIZE);
+	pdata->sev_cmd_resp_reg = sevregs.cmd_resp_reg_addr - base;
+	pdata->sev_cmd_buf_lo_reg = sevregs.cmd_buf_lo_reg_addr - base;
+	pdata->sev_cmd_buf_hi_reg = sevregs.cmd_buf_hi_reg_addr - base;
+	pdata->feature_reg = gregs.feature_reg_addr - base;
+	pdata->irq_en_reg = gregs.irq_en_reg_addr - base;
+	pdata->irq_st_reg = gregs.irq_st_reg_addr - base;
+	pdata->mbox_irq_id = sevregs.mbox_irq_id;
+	pdata->acpi_cmd_resp_reg = acpiregs.cmd_resp_reg_addr - base;
+exit:
+	acpi_put_table((struct acpi_table_header *)aspt);
+	return err;
+}
+
 static int __init hv_add_platform_psp(void)
 {
-	struct acpi_table_header *table;
-	acpi_status status;
+	struct psp_platform_data pdata = {};
+	struct resource res[1];
 	int err;
 
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP)) {
@@ -552,17 +624,17 @@ static int __init hv_add_platform_psp(void)
 		pr_err("hv-vpsp: Non Hyper-V system\n");
 		return -ENODEV;
 	}
-	status = acpi_get_table(ACPI_SIG_ASPT, 0, &table);
-	if (ACPI_FAILURE(status)) {
-		const char *msg = acpi_format_exception(status);
-		pr_err("hv-vpsp: Failed to get ASPT table, %s\n", msg);
+
+	if (vpsp_parse_aspt(res, &pdata))
 		return -ENODEV;
-	}
+	if (platform_device_add_data(&hv_vpsp_device, &pdata, sizeof(pdata)))
+		return -ENODEV;
+	if (platform_device_add_resources(&hv_vpsp_device, res, 1))
+		return -ENODEV;
 
 	err = platform_device_register(&hv_vpsp_device);
 	if (err)
 		pr_err("hv-vpsp: register error: %d\n", err);
-	acpi_put_table(table);
 	return 0;
 }
 device_initcall(hv_add_platform_psp);
