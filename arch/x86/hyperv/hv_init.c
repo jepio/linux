@@ -33,6 +33,8 @@
 #include <clocksource/hyperv_timer.h>
 #include <linux/highmem.h>
 #include <linux/swiotlb.h>
+#include <linux/irq.h>
+#include <linux/iopoll.h>
 
 int hyperv_init_cpuhp;
 u64 hv_current_partition_id = ~0ull;
@@ -534,11 +536,197 @@ common_free:
 	hv_common_free();
 }
 
+#define PSP_ACPI_DATA_SHIFT 0
+#define PSP_ACPI_DATA_MASK GENMASK(15, 0)
+#define PSP_ACPI_CMDID_SHIFT 16
+#define PSP_ACPI_CMDID_MASK GENMASK(25, 16) 
+#define PSP_ACPI_STATUS_SHIFT 26
+#define PSP_ACPI_STATUS_MASK GENMASK(30, 26)
+#define PSP_ACPI_RESPONSE_BIT BIT(31)
+
+#define PSP_ACPI_VECTOR_SHIFT 0
+#define PSP_ACPI_VECTOR_MASK GENMASK(7, 0)
+#define PSP_ACPI_MBOX_IRQID_SHIFT 10
+#define PSP_ACPI_MBOX_IRQID_MASK GENMASK(15, 10)
+
+#define PSP_ACPI_IRQ_EN_BIT BIT(0)
+#define PSP_ACPI_IRQ_EN_MBOX_IRQID_SHIFT 10
+#define PSP_ACPI_IRQ_EN_MBOX_IRQID_MASK GENMASK(15, 10)
+
+// AMD Secure Processor
+enum ASP_CMDID {
+	ASP_CMDID_PART1  = 0x82,
+	ASP_CMDID_PART2  = 0x83,
+	ASP_CMDID_PART3  = 0x84,
+	ASP_CMDID_IRQ_EN = 0x85,
+};
+
+enum ASP_CMD_STATUS {
+	ASP_CMD_STATUS_SUCCESS = 0x0,
+	ASP_CMD_STATUS_INVALID_CMD = 0x1,
+	ASP_CMD_STATUS_INVALID_PARAM = 0x2,
+	ASP_CMD_STATUS_INVALID_FW_STATE = 0x3,
+	ASP_CMD_STATUS_FAILURE = 0x1F,
+};
+
+struct hv_psp_irq_domain_data {
+	void __iomem *base;
+	int mbox_irq_id;
+	int acpi_cmd_resp_reg;
+};
+
+static int psp_sync_cmd(void __iomem *reg, u8 cmd, u16 data)
+{
+	u32 val = 0;
+	int err;
+
+	val |= data & PSP_ACPI_DATA_MASK;
+	val |= (cmd << PSP_ACPI_CMDID_SHIFT) & PSP_ACPI_CMDID_MASK;
+	iowrite32(val, reg);
+	err = readl_poll_timeout_atomic(reg, val, val & PSP_ACPI_RESPONSE_BIT, 2, 10000);
+	if (err < 0)
+		return err;
+	return (val & PSP_ACPI_STATUS_MASK) >> PSP_ACPI_STATUS_SHIFT;
+}
+
+static int vpsp_set_irq_enable(struct hv_psp_irq_domain_data *data, bool irq_en)
+{
+	u8 mbox_irq_id = data->mbox_irq_id;
+	void __iomem *reg = data->base + data->acpi_cmd_resp_reg;
+	u16 val = 0;
+	int err;
+
+	val |= irq_en ? PSP_ACPI_IRQ_EN_BIT : 0;
+	val |= (mbox_irq_id << PSP_ACPI_IRQ_EN_MBOX_IRQID_SHIFT) & PSP_ACPI_IRQ_EN_MBOX_IRQID_MASK;
+	err = psp_sync_cmd(reg, ASP_CMDID_IRQ_EN, val);
+	if (err != ASP_CMD_STATUS_SUCCESS) {
+		pr_err("ASP_CMDID_IRQ_EN failed: %d\n", err);
+		return -EIO;
+	}
+	return 0;
+}
+static int vpsp_configure_irq(struct hv_psp_irq_domain_data *data, unsigned int cpu)
+{
+	unsigned int dest_cpu = cpu_physical_id(cpu);
+	u8 mbox_irq_id = data->mbox_irq_id;
+	void __iomem *reg = data->base + data->acpi_cmd_resp_reg;
+	int err;
+
+	u16 part1 = dest_cpu;
+	u16 part2 = dest_cpu >> 16;
+	u16 part3 = 0;
+
+	part3 |= HYPERV_PSP_VECTOR;
+	part3 |= (mbox_irq_id << PSP_ACPI_MBOX_IRQID_SHIFT) & PSP_ACPI_MBOX_IRQID_MASK;
+	
+	err = psp_sync_cmd(reg, ASP_CMDID_PART1, part1);
+	if (err != ASP_CMD_STATUS_SUCCESS) {
+		pr_err("ASP_CMDID_PART1 failed: %d\n", err);
+		return -EIO;
+	}
+	err = psp_sync_cmd(reg, ASP_CMDID_PART2, part2);
+	if (err != ASP_CMD_STATUS_SUCCESS) {
+		pr_err("ASP_CMDID_PART2 failed: %d\n", err);
+		return -EIO;
+	}
+	err = psp_sync_cmd(reg, ASP_CMDID_PART3, part3);
+	if (err != ASP_CMD_STATUS_SUCCESS) {
+		pr_err("ASP_CMDID_PART3 failed: %d\n", err);
+		return -EIO;
+	}
+
+	return 0;
+}
+
 struct irq_domain *hv_psp_domain;
 void hv_psp_irq(void)
 {
 	if (hv_psp_domain)
 		generic_handle_domain_irq(hv_psp_domain, 0);
+}
+struct hv_psp_irq_domain_data hv_psp_irq_data;
+
+static void hv_psp_irq_enable(struct irq_data *d)
+{
+	struct hv_psp_irq_domain_data *data = irq_data_get_irq_chip_data(d);
+	vpsp_set_irq_enable(data, true);
+	pr_info("%s\n", __func__);
+}
+static void hv_psp_irq_disable(struct irq_data *d)
+{
+	struct hv_psp_irq_domain_data *data = irq_data_get_irq_chip_data(d);
+	vpsp_set_irq_enable(data, false);
+	pr_info("%s\n", __func__);
+}
+static int hv_psp_irq_set_affinity(struct irq_data *d, const struct cpumask *dest, bool force)
+{
+	struct hv_psp_irq_domain_data *data = irq_data_get_irq_chip_data(d);
+	int err = vpsp_configure_irq(data, cpumask_first(dest));
+	if (!err)
+		irq_data_update_effective_affinity(d, cpumask_of(cpumask_first(dest)));
+	pr_info("%s=%d\n", __func__, err);
+	return err;
+}
+
+static struct irq_chip hv_psp_irq_chip = {
+	.name = "PSP",
+	.irq_enable = hv_psp_irq_enable,
+	.irq_disable = hv_psp_irq_disable,
+	.irq_set_affinity = hv_psp_irq_set_affinity,
+};
+
+static int hv_psp_irq_domain_map(struct irq_domain *d, unsigned int irq,
+	irq_hw_number_t hwirq)
+{
+	struct hv_psp_irq_domain_data *data = d->host_data;
+	vpsp_configure_irq(data, 0);
+	irq_set_chip_and_handler(irq, &hv_psp_irq_chip, handle_simple_irq);
+	irq_set_chip_data(irq, d->host_data);
+	pr_info("%s hwirq=%d\n", __func__, hwirq);
+	return 0;
+}
+
+static const struct irq_domain_ops hv_psp_irq_domain_ops = {
+	.map = hv_psp_irq_domain_map,
+};
+
+static int hv_psp_init_irq(const struct psp_platform_data *pdata, const struct resource *reg, struct resource *irq)
+{
+	void __iomem *base = NULL;
+	int virq;
+	int err;
+
+	base = ioremap(reg->start, resource_size(reg));
+	if (IS_ERR(base))
+		return PTR_ERR(base);
+	if (!base)
+		return -ENOMEM;
+	hv_psp_irq_data.mbox_irq_id = pdata->mbox_irq_id;
+	hv_psp_irq_data.acpi_cmd_resp_reg = pdata->acpi_cmd_resp_reg;
+	hv_psp_irq_data.base = base;
+	hv_psp_domain = irq_domain_create_linear(NULL, 1, &hv_psp_irq_domain_ops, &hv_psp_irq_data);
+	if (!hv_psp_domain) {
+		pr_err("failed to create irq domain\n");
+		err = -ENOMEM;
+		goto unmap;
+	}
+	virq = irq_create_mapping(hv_psp_domain, 0);
+	if (virq <= 0) {
+		pr_err("failed to create mapping for irq\n");
+		err = virq < 0 ? virq : -ENXIO;
+		goto remove;
+	}
+	*irq = (struct resource)DEFINE_RES_IRQ(virq);
+	hv_setup_psp_handler(hv_psp_irq);
+	return 0;
+
+remove:
+	irq_domain_remove(hv_psp_domain);
+	hv_psp_domain = NULL;
+unmap:
+	iounmap(base);
+	hv_psp_irq_data.base = NULL;
+	return err;
 }
 
 static struct platform_device hv_vpsp_device = {
@@ -613,7 +801,7 @@ exit:
 static int __init hv_add_platform_psp(void)
 {
 	struct psp_platform_data pdata = {};
-	struct resource res[1];
+	struct resource res[2];
 	int err;
 
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP)) {
@@ -625,11 +813,19 @@ static int __init hv_add_platform_psp(void)
 		return -ENODEV;
 	}
 
-	if (vpsp_parse_aspt(res, &pdata))
+
+	if (vpsp_parse_aspt(&res[0], &pdata)) {
+		pr_err("hv-vpsp: failed to parse ASPT\n");
 		return -ENODEV;
+	}
+
+	if (hv_psp_init_irq(&pdata, &res[0], &res[1])) {
+		pr_err("hv-vpsp: failed to init IRQ\n");
+		return -ENODEV;
+	}
 	if (platform_device_add_data(&hv_vpsp_device, &pdata, sizeof(pdata)))
 		return -ENODEV;
-	if (platform_device_add_resources(&hv_vpsp_device, res, 1))
+	if (platform_device_add_resources(&hv_vpsp_device, res, 2))
 		return -ENODEV;
 
 	err = platform_device_register(&hv_vpsp_device);

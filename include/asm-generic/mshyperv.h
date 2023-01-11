@@ -157,6 +157,8 @@ void hv_setup_vmbus_handler(void (*handler)(void));
 void hv_remove_vmbus_handler(void);
 void hv_setup_stimer0_handler(void (*handler)(void));
 void hv_remove_stimer0_handler(void);
+void hv_setup_psp_handler(void (*handler)(void));
+void hv_remove_psp_handler(void);
 
 void hv_setup_kexec_handler(void (*handler)(void));
 void hv_remove_kexec_handler(void);
@@ -302,3 +304,4 @@ static inline bool svm_hv_enlightened_psmash(void) { return false; }
 #endif /* CONFIG_HYPERV */
 
 #endif
+

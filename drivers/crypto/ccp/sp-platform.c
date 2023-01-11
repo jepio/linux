@@ -108,118 +108,6 @@ static const struct platform_device_id sp_plat_match[] = {
 };
 MODULE_DEVICE_TABLE(platform, sp_plat_match);
 
-/*
-#ifdef CONFIG_ACPI
-
-#define PSP_ACPI_DATA_SHIFT 0
-#define PSP_ACPI_DATA_MASK GENMASK(15, 0)
-#define PSP_ACPI_CMDID_SHIFT 16
-#define PSP_ACPI_CMDID_MASK GENMASK(25, 16) 
-#define PSP_ACPI_STATUS_SHIFT 26
-#define PSP_ACPI_STATUS_MASK GENMASK(30, 26)
-#define PSP_ACPI_RESPONSE_BIT BIT(31)
-
-#define PSP_ACPI_VECTOR_SHIFT 0
-#define PSP_ACPI_VECTOR_MASK GENMASK(7, 0)
-#define PSP_ACPI_MBOX_IRQID_SHIFT 10
-#define PSP_ACPI_MBOX_IRQID_MASK GENMASK(15, 10)
-
-#define PSP_ACPI_IRQ_EN_BIT BIT(0)
-#define PSP_ACPI_IRQ_EN_MBOX_IRQID_SHIFT 10
-#define PSP_ACPI_IRQ_EN_MBOX_IRQID_MASK GENMASK(15, 10)
-
-// AMD Secure Processor
-enum ASP_CMDID {
-	ASP_CMDID_PART1  = 0x82,
-	ASP_CMDID_PART2  = 0x83,
-	ASP_CMDID_PART3  = 0x84,
-	ASP_CMDID_IRQ_EN = 0x85,
-};
-
-enum ASP_CMD_STATUS {
-	ASP_CMD_STATUS_SUCCESS = 0x0,
-	ASP_CMD_STATUS_INVALID_CMD = 0x1,
-	ASP_CMD_STATUS_INVALID_PARAM = 0x2,
-	ASP_CMD_STATUS_INVALID_FW_STATE = 0x3,
-	ASP_CMD_STATUS_FAILURE = 0x1F,
-};
-
-static int psp_sync_cmd(void __iomem *reg, u8 cmd, u16 data)
-{
-	u32 val = 0;
-	int err;
-
-	val |= data & PSP_ACPI_DATA_MASK;
-	val |= (cmd << PSP_ACPI_CMDID_SHIFT) & PSP_ACPI_CMDID_MASK;
-	iowrite32(val, reg);
-	err = readl_poll_timeout_atomic(reg, val, val & PSP_ACPI_RESPONSE_BIT, 2, 10000);
-	if (err < 0)
-		return err;
-	return (val & PSP_ACPI_STATUS_MASK) >> PSP_ACPI_STATUS_SHIFT;
-}
-
-static int vpsp_set_irq_enable(struct sp_device *sp, bool irq_en)
-{
-	const struct psp_vdata *psp = sp->dev_vdata->psp_vdata;
-	u8 mbox_irq_id = psp->sev->mbox_irq_id;
-	void __iomem *reg = sp->io_map + psp->acpi_cmdresp_reg;
-	u16 val = 0;
-	int err;
-
-	val |= irq_en ? PSP_ACPI_IRQ_EN_BIT : 0;
-	val |= (mbox_irq_id << PSP_ACPI_IRQ_EN_MBOX_IRQID_SHIFT) & PSP_ACPI_IRQ_EN_MBOX_IRQID_MASK;
-	err = psp_sync_cmd(reg, ASP_CMDID_IRQ_EN, val);
-	if (err != ASP_CMD_STATUS_SUCCESS) {
-		dev_err(sp->dev, "ASP_CMDID_IRQ_EN failed: %d\n", err);
-		return -EIO;
-	}
-	return 0;
-}
-static int vpsp_enable_irq(struct sp_device *sp)
-{
-	return vpsp_set_irq_enable(sp, true);
-}
-static int vpsp_disable_irq(struct sp_device *sp)
-{
-	return vpsp_set_irq_enable(sp, false);
-}
-
-static int vpsp_configure_irq(struct sp_device *sp, u8 vector)
-{
-	const struct psp_vdata *psp = sp->dev_vdata->psp_vdata;
-	unsigned int dest_cpu = boot_cpu_physical_apicid;
-	u8 mbox_irq_id = psp->sev->mbox_irq_id;
-	void __iomem *reg = sp->io_map + psp->acpi_cmdresp_reg;
-	int err;
-
-	u16 part1 = dest_cpu;
-	u16 part2 = dest_cpu >> 16;
-	u16 part3 = 0;
-
-	part3 |= vector;
-	part3 |= (mbox_irq_id << PSP_ACPI_MBOX_IRQID_SHIFT) & PSP_ACPI_MBOX_IRQID_MASK;
-	
-	err = psp_sync_cmd(reg, ASP_CMDID_PART1, part1);
-	if (err != ASP_CMD_STATUS_SUCCESS) {
-		dev_err(sp->dev, "ASP_CMDID_PART1 failed: %d\n", err);
-		return -EIO;
-	}
-	err = psp_sync_cmd(reg, ASP_CMDID_PART2, part2);
-	if (err != ASP_CMD_STATUS_SUCCESS) {
-		dev_err(sp->dev, "ASP_CMDID_PART2 failed: %d\n", err);
-		return -EIO;
-	}
-	err = psp_sync_cmd(reg, ASP_CMDID_PART3, part3);
-	if (err != ASP_CMD_STATUS_SUCCESS) {
-		dev_err(sp->dev, "ASP_CMDID_PART3 failed: %d\n", err);
-		return -EIO;
-	}
-
-	return 0;
-}
-#endif
-*/
-
 static void psp_set_master(struct sp_device *sp)
 {
 	if (!sp_dev_master) {
@@ -271,11 +159,6 @@ static int sp_get_irqs(struct sp_device *sp)
 	struct device *dev = sp->dev;
 	struct platform_device *pdev = to_platform_device(dev);
 	int ret;
-	if (sp_platform->is_vpsp) {
-		sp->psp_irq = 10;
-		sp->ccp_irq = 10;
-		return 0;
-	}
 
 	sp_platform->irq_count = platform_irq_count(pdev);
 
@@ -394,7 +277,7 @@ static int sp_platform_probe(struct platform_device *pdev)
 	{
 		struct psp_device *psp = sp->psp_data;
 		struct sev_device *sev = psp->sev_data;
-		sev_set_poll_handler(sev, vpsp_wait_event);
+		//sev_set_poll_handler(sev, vpsp_wait_event);
 	}
 
 	dev_notice(dev, "enabled\n");

@@ -42,6 +42,7 @@ struct ms_hyperv_info ms_hyperv;
 #if IS_ENABLED(CONFIG_HYPERV)
 static void (*vmbus_handler)(void);
 static void (*hv_stimer0_handler)(void);
+static void (*hv_psp_handler)(void);
 static void (*hv_kexec_handler)(void);
 static void (*hv_crash_handler)(struct pt_regs *regs);
 
@@ -97,6 +98,28 @@ void hv_remove_stimer0_handler(void)
 {
 	/* We have no way to deallocate the interrupt gate */
 	hv_stimer0_handler = NULL;
+}
+
+/*
+ * Forward to PSP IRQ handler
+ */
+DEFINE_IDTENTRY_SYSVEC(sysvec_hyperv_psp)
+{
+	struct pt_regs *old_regs = set_irq_regs(regs);
+	if (hv_psp_handler)
+		hv_psp_handler();
+	ack_APIC_irq();
+	set_irq_regs(old_regs);
+}
+
+void hv_setup_psp_handler(void (*handler)(void))
+{
+	hv_psp_handler = handler;
+}
+
+void hv_remove_psp_handler(void)
+{
+	hv_psp_handler = NULL;
 }
 
 void hv_setup_kexec_handler(void (*handler)(void))
@@ -428,6 +451,10 @@ static void __init ms_hyperv_init_platform(void)
 	if (ms_hyperv.misc_features & HV_STIMER_DIRECT_MODE_AVAILABLE) {
 		alloc_intr_gate(HYPERV_STIMER0_VECTOR,
 				asm_sysvec_hyperv_stimer0);
+	}
+
+	if (cpu_feature_enabled(X86_FEATURE_SEV_SNP)) {
+		alloc_intr_gate(HYPERV_PSP_VECTOR, asm_sysvec_hyperv_psp);
 	}
 
 # ifdef CONFIG_SMP
