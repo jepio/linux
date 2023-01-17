@@ -29,6 +29,7 @@
 struct sp_platform {
 	int coherent;
 	unsigned int irq_count;
+	bool is_platform;
 };
 
 #ifdef CONFIG_CRYPTO_DEV_SP_PSP
@@ -190,8 +191,10 @@ static int sp_platform_probe(struct platform_device *pdev)
 	sp->dev_specific = sp_platform;
 	sp->dev_vdata = pdev->dev.of_node ? sp_get_of_version(pdev)
 					 : sp_get_acpi_version(pdev);
-	if (!sp->dev_vdata && pdev->id_entry)
+	if (!sp->dev_vdata && pdev->id_entry) {
+		sp_platform->is_platform = true;
 		sp->dev_vdata = sp_get_plat_version(pdev);
+	}
 	if (!sp->dev_vdata) {
 		ret = -ENODEV;
 		dev_err(dev, "missing driver data\n");
@@ -205,7 +208,7 @@ static int sp_platform_probe(struct platform_device *pdev)
 	}
 
 	attr = device_get_dma_attr(dev);
-	if (attr == DEV_DMA_NOT_SUPPORTED) {
+	if (!sp_platform->is_platform && attr == DEV_DMA_NOT_SUPPORTED) {
 		dev_err(dev, "DMA is not supported");
 		goto e_err;
 	}
