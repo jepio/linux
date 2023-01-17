@@ -40,9 +40,9 @@ struct ccp_vdata {
 };
 
 struct sev_vdata {
-	const unsigned int cmdresp_reg;
-	const unsigned int cmdbuff_addr_lo_reg;
-	const unsigned int cmdbuff_addr_hi_reg;
+	unsigned int cmdresp_reg;
+	unsigned int cmdbuff_addr_lo_reg;
+	unsigned int cmdbuff_addr_hi_reg;
 };
 
 struct tee_vdata {
@@ -56,9 +56,9 @@ struct tee_vdata {
 struct psp_vdata {
 	const struct sev_vdata *sev;
 	const struct tee_vdata *tee;
-	const unsigned int feature_reg;
-	const unsigned int inten_reg;
-	const unsigned int intsts_reg;
+	unsigned int feature_reg;
+	unsigned int inten_reg;
+	unsigned int intsts_reg;
 };
 
 /* Structure to hold SP device data */
