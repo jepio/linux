@@ -30,6 +30,9 @@ static int __init psp_init_platform_device(void)
 	err = platform_device_add_resources(&psp_device, res, 1);
 	if (err)
 		return err;
+	err = platform_device_add_data(&psp_device, &pdata, sizeof(pdata));
+	if (err)
+		return err;
 
 	err = platform_device_register(&psp_device);
 	if (err)
