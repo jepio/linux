@@ -47,12 +47,6 @@ struct rmpentry {
 	u64 rsvd3;
 } __packed;
 
-/*
- * The first 16KB from the RMP_BASE is used by the processor for the
- * bookkeeping, the range needs to be added during the RMP entry lookup.
- */
-#define RMPTABLE_CPU_BOOKKEEPING_SZ	0x4000
-
 /* Mask to apply to a PFN to get the first PFN of a 2MB page */
 #define PFN_PMD_MASK	(~((1ULL << (PMD_SHIFT - PAGE_SHIFT)) - 1))
 
