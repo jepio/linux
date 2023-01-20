@@ -281,6 +281,8 @@ void snp_accept_memory(phys_addr_t start, phys_addr_t end);
 bool snp_get_rmptable_info(u64 *start, u64 *len);
 void __init snp_remap_svsm_caa(void);
 int snp_get_vmpl(void);
+bool snp_soft_rmptable(void);
+void __init snp_set_soft_rmptable(void);
 #else
 static inline void sev_es_ist_enter(struct pt_regs *regs) { }
 static inline void sev_es_ist_exit(void) { }
@@ -309,6 +311,8 @@ static inline void snp_accept_memory(phys_addr_t start, phys_addr_t end) { }
 static inline bool snp_get_rmptable_info(u64 *start, u64 *len) { return false; }
 static inline void snp_remap_svsm_caa(void) { }
 static inline int snp_get_vmpl(void) { return 0; }
+static inline bool snp_soft_rmptable(void) { return false; }
+static inline void snp_set_soft_rmptable(void) {}
 #endif
 
 #endif

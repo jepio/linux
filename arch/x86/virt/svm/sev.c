@@ -255,6 +255,14 @@ static int rmptable_entry(u64 pfn, struct rmpentry *entry)
 	return 0;
 }
 
+static struct rmpentry *get_rmpentry(u64 pfn)
+{
+	if (WARN_ON_ONCE(pfn > rmptable_max_pfn))
+		return ERR_PTR(-EFAULT);
+
+	return &rmptable_start[pfn];
+}
+
 static int __snp_lookup_rmpentry(u64 pfn, struct rmpentry *entry, int *level)
 {
 	struct rmpentry large_entry;
@@ -336,6 +344,22 @@ void sev_dump_rmpentry(u64 pfn)
 }
 EXPORT_SYMBOL_GPL(sev_dump_rmpentry);
 
+static bool soft_rmptable __ro_after_init;
+
+/*
+ * Test if the rmptable needs to be managed by software and is not maintained by
+ * (virtualized) hardware.
+ */
+bool snp_soft_rmptable(void)
+{
+	return soft_rmptable;
+}
+
+void __init snp_set_soft_rmptable(void)
+{
+	soft_rmptable = true;
+}
+
 static bool virt_snp_msr(void)
 {
 	return boot_cpu_has(X86_FEATURE_NESTED_VIRT_SNP_MSR);
@@ -362,6 +386,29 @@ static u64 virt_psmash(u64 paddr)
 	return ret;
 }
 
+static void snp_update_rmptable_psmash(u64 pfn)
+{
+	int level;
+	struct rmpentry tmp;
+	struct rmpentry *entry = &tmp;
+	int err = __snp_lookup_rmpentry(pfn, entry, &level);
+
+	if (WARN_ON_ONCE(err))
+		return;
+
+	if (level == PG_LEVEL_2M) {
+		get_rmpentry(pfn)->pagesize = RMP_PG_SIZE_4K;
+		int i;
+
+		for (i = 1; i < PTRS_PER_PMD; i++) {
+			struct rmpentry *it = get_rmpentry(pfn + i);
+			*it = *entry;
+			it->gpa = entry->gpa + i * PAGE_SIZE;
+		}
+	}
+}
+
+
 /*
  * PSMASH a 2MB aligned page into 4K pages in the RMP table while preserving the
  * Validated bit.
@@ -381,6 +428,8 @@ int psmash(u64 pfn)
 
 	if (virt_snp_msr()) {
 		ret = virt_psmash(paddr);
+		if (!ret && snp_soft_rmptable())
+			snp_update_rmptable_psmash(pfn);
 	} else {
 		/* Binutils version 2.36 supports the PSMASH mnemonic. */
 		asm volatile(".byte 0xF3, 0x0F, 0x01, 0xFF"
@@ -452,6 +501,37 @@ static u64 virt_rmpupdate(unsigned long paddr, struct rmp_state *val)
 		: "memory", "cc"
 	);
 	return ret;
+}
+
+static void snp_update_rmptable_rmpupdate(u64 pfn, int level, struct rmp_state *val)
+{
+	int prev_level;
+	struct rmpentry tmp;
+	struct rmpentry *entry = &tmp;
+	int err = __snp_lookup_rmpentry(pfn, entry, &prev_level);
+
+	if (WARN_ON_ONCE(err))
+		return;
+
+	if (level > PG_LEVEL_4K) {
+		int i;
+		struct rmpentry tmp_rmp = {
+			.assigned = val->assigned,
+		};
+		WARN_ON((pfn + PTRS_PER_PMD) > rmptable_max_pfn);
+		for (i = 1; i < PTRS_PER_PMD; i++)
+			*get_rmpentry(pfn + i) = tmp_rmp;
+	}
+	entry = get_rmpentry(pfn);
+	if (!val->assigned) {
+		memset(entry, 0, sizeof(entry));
+	} else {
+		entry->assigned = val->assigned;
+		entry->pagesize = val->pagesize;
+		entry->immutable = val->immutable;
+		entry->gpa = val->gpa;
+		entry->asid = val->asid;
+	}
 }
 
 static int rmpupdate(u64 pfn, struct rmp_state *val)
