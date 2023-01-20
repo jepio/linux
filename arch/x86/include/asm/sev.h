@@ -91,6 +91,11 @@ extern bool handle_vc_boot_ghcb(struct pt_regs *regs);
 #define RMP_PG_SIZE_4K			0
 #define RMP_PG_SIZE_2M			1
 
+/*
+ * The first 16KB from the RMP_BASE is used by the processor for the
+ * bookkeeping, the range needs to be added during the RMP entry lookup.
+ */
+#define RMPTABLE_CPU_BOOKKEEPING_SZ	0x4000
 #define RMPADJUST_VMSA_PAGE_BIT		BIT(16)
 
 /* SNP Guest message request */
