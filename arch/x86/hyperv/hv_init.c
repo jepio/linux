@@ -117,6 +117,11 @@ static int hv_cpu_init(unsigned int cpu)
 		}
 	}
 
+	if (IS_ENABLED(CONFIG_AMD_MEM_ENCRYPT) && hv_needs_snp_rmp()) {
+		wrmsrl(MSR_AMD64_RMP_BASE, rmp_res.start);
+		wrmsrl(MSR_AMD64_RMP_END, rmp_res.end);
+	}
+
 	return hyperv_init_ghcb();
 }
 
