@@ -48,12 +48,6 @@ struct rmpentry {
 } __packed;
 
 /*
- * The first 16KB from the RMP_BASE is used by the processor for the
- * bookkeeping, the range needs to be added during the RMP entry lookup.
- */
-#define RMPTABLE_CPU_BOOKKEEPING_SZ	0x4000
-
-/*
  * RMP_END can never be zero as RMP_END[12:0] is fixed at 0x1fff.
  * To check for a "zero" value, check RMP_END[63:13].
  */
