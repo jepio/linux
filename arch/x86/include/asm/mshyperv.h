@@ -190,6 +190,9 @@ static inline void hv_ghcb_terminate(unsigned int set, unsigned int reason) {}
 
 extern bool hv_isolation_type_snp(void);
 
+extern struct resource rmp_res;
+bool hv_needs_snp_rmp(void);
+
 static inline bool hv_is_synic_reg(unsigned int reg)
 {
 	if ((reg >= HV_REGISTER_SCONTROL) &&
