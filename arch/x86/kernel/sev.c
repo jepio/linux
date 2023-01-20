@@ -2515,6 +2515,22 @@ int snp_lookup_rmpentry(u64 pfn, int *level)
 }
 EXPORT_SYMBOL_GPL(snp_lookup_rmpentry);
 
+static bool soft_rmptable __ro_after_init;
+
+/*
+ * Test if the rmptable needs to be managed by software and is not maintained by
+ * (virtualized) hardware.
+ */
+bool snp_soft_rmptable(void)
+{
+	return soft_rmptable;
+}
+
+void __init snp_set_soft_rmptable(void)
+{
+	soft_rmptable = true;
+}
+
 static bool virt_snp_msr(void)
 {
 	return boot_cpu_has(X86_FEATURE_NESTED_VIRT_SNP_MSR);
@@ -2541,6 +2557,26 @@ static u64 virt_psmash(u64 paddr)
 	return ret;
 }
 
+static void snp_update_rmptable_psmash(u64 pfn)
+{
+	int level;
+	struct rmpentry *entry = __snp_lookup_rmpentry(pfn, &level);
+
+	if (WARN_ON(IS_ERR_OR_NULL(entry)))
+		return;
+
+	if (level == PG_LEVEL_2M) {
+		int i;
+
+		entry->info.pagesize = RMP_PG_SIZE_4K;
+		for (i = 1; i < PTRS_PER_PMD; i++) {
+			struct rmpentry *it = &entry[i];
+			*it = *entry;
+			it->info.gpa = entry->info.gpa + i * PAGE_SIZE;
+		}
+	}
+}
+
 int psmash(u64 pfn)
 {
 	unsigned long paddr = pfn << PAGE_SHIFT;
@@ -2554,6 +2590,8 @@ int psmash(u64 pfn)
 
 	if (virt_snp_msr()) {
 		ret = virt_psmash(paddr);
+		if (!ret && snp_soft_rmptable())
+			snp_update_rmptable_psmash(pfn);
 	} else {
 		/* Binutils version 2.36 supports the PSMASH mnemonic. */
 		asm volatile(".byte 0xF3, 0x0F, 0x01, 0xFF"
@@ -2623,6 +2661,35 @@ static u64 virt_rmpupdate(unsigned long paddr, struct rmpupdate *val)
 	return ret;
 }
 
+static void snp_update_rmptable_rmpupdate(u64 pfn, int level, struct rmpupdate *val)
+{
+	int prev_level;
+	struct rmpentry *entry = __snp_lookup_rmpentry(pfn, &prev_level);
+
+	if (WARN_ON(IS_ERR_OR_NULL(entry)))
+		return;
+
+	if (level > PG_LEVEL_4K) {
+		int i;
+		struct rmpentry tmp_rmp = {
+			.info = {
+				.assigned = val->assigned,
+			},
+		};
+		for (i = 1; i < PTRS_PER_PMD; i++)
+			entry[i] = tmp_rmp;
+	}
+	if (!val->assigned) {
+		memset(entry, 0, sizeof(*entry));
+	} else {
+		entry->info.assigned = val->assigned;
+		entry->info.pagesize = val->pagesize;
+		entry->info.immutable = val->immutable;
+		entry->info.gpa = val->gpa;
+		entry->info.asid = val->asid;
+	}
+}
+
 static int rmpupdate(u64 pfn, struct rmpupdate *val)
 {
 	unsigned long paddr = pfn << PAGE_SHIFT;
@@ -2654,6 +2721,8 @@ retry:
 
 	if (virt_snp_msr()) {
 		ret = virt_rmpupdate(paddr, val);
+		if (!ret && snp_soft_rmptable())
+			snp_update_rmptable_rmpupdate(pfn, level, val);
 	} else {
 		/* Binutils version 2.36 supports the RMPUPDATE mnemonic. */
 		asm volatile(".byte 0xF2, 0x0F, 0x01, 0xFE"
