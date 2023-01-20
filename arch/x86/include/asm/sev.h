@@ -219,6 +219,8 @@ void snp_accept_memory(phys_addr_t start, phys_addr_t end);
 u64 snp_get_unsupported_features(u64 status);
 u64 sev_get_status(void);
 bool snp_get_rmptable_info(u64 *start, u64 *len);
+bool snp_soft_rmptable(void);
+void __init snp_set_soft_rmptable(void);
 #else
 static inline void sev_es_ist_enter(struct pt_regs *regs) { }
 static inline void sev_es_ist_exit(void) { }
@@ -248,6 +250,8 @@ static inline void snp_accept_memory(phys_addr_t start, phys_addr_t end) { }
 static inline u64 snp_get_unsupported_features(u64 status) { return 0; }
 static inline u64 sev_get_status(void) { return 0; }
 static inline bool snp_get_rmptable_info(u64 *start, u64 *len) { return false; }
+static inline bool snp_soft_rmptable(void) { return false; }
+static inline void __init snp_set_soft_rmptable(void) {}
 #endif
 
 #endif
