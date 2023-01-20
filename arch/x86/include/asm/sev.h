@@ -235,6 +235,8 @@ int snp_issue_guest_request(u64 exit_code, struct snp_req_data *input, struct sn
 void snp_accept_memory(phys_addr_t start, phys_addr_t end);
 u64 snp_get_unsupported_features(u64 status);
 u64 sev_get_status(void);
+bool snp_soft_rmptable(void);
+void __init snp_set_soft_rmptable(void);
 #else
 static inline void sev_es_ist_enter(struct pt_regs *regs) { }
 static inline void sev_es_ist_exit(void) { }
@@ -293,6 +295,8 @@ static inline u64 snp_config_transaction_start(void) { return 0; }
 static inline u64 snp_config_transaction_end(void) { return 0; }
 static inline u64 snp_config_transaction_get_id(void) { return 0; }
 static inline bool snp_config_transaction_is_stale(u64 id) { return false; }
+static inline bool snp_soft_rmptable(void) { return false; }
+static inline void snp_set_soft_rmptable(void) {}
 #endif
 
 #endif
