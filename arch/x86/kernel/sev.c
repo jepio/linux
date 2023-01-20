@@ -2566,6 +2566,24 @@ int snp_lookup_rmpentry(u64 pfn, int *level)
 }
 EXPORT_SYMBOL_GPL(snp_lookup_rmpentry);
 
+static bool virt_snp_msr(void)
+{
+	return boot_cpu_has(X86_FEATURE_NESTED_VIRT_SNP_MSR);
+}
+
+static u64 virt_psmash(u64 paddr)
+{
+	int ret;
+
+	asm volatile(
+		"wrmsr\n\t"
+		: "=a"(ret)
+		: "a"(paddr), "c"(MSR_AMD64_VIRT_PSMASH)
+		: "memory", "cc"
+	);
+	return ret;
+}
+
 /*
  * psmash is used to smash a 2MB aligned page into 4K
  * pages while preserving the Validated bit in the RMP.
@@ -2581,11 +2599,15 @@ int psmash(u64 pfn)
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
 		return -ENXIO;
 
-	/* Binutils version 2.36 supports the PSMASH mnemonic. */
-	asm volatile(".byte 0xF3, 0x0F, 0x01, 0xFF"
-		      : "=a"(ret)
-		      : "a"(paddr)
-		      : "memory", "cc");
+	if (virt_snp_msr()) {
+		ret = virt_psmash(paddr);
+	} else {
+		/* Binutils version 2.36 supports the PSMASH mnemonic. */
+		asm volatile(".byte 0xF3, 0x0F, 0x01, 0xFF"
+			      : "=a"(ret)
+			      : "a"(paddr)
+			      : "memory", "cc");
+	}
 
 	return ret;
 }
@@ -2599,6 +2621,21 @@ static int restore_direct_map(u64 pfn, int npages)
 static int invalidate_direct_map(unsigned long pfn, int npages)
 {
 	return set_memory_np((unsigned long)pfn_to_kaddr(pfn), npages);
+}
+
+static u64 virt_rmpupdate(unsigned long paddr, struct rmp_state *val)
+{
+	int ret;
+	register u64 hi asm("r8") = ((u64 *)val)[1];
+	register u64 lo asm("rdx") = ((u64 *)val)[0];
+
+	asm volatile(
+		"wrmsr\n\t"
+		: "=a"(ret)
+		: "a"(paddr), "c"(MSR_AMD64_VIRT_RMPUPDATE), "r"(lo), "r"(hi)
+		: "memory", "cc"
+	);
+	return ret;
 }
 
 static int rmpupdate(u64 pfn, struct rmp_state *val)
@@ -2626,11 +2663,16 @@ static int rmpupdate(u64 pfn, struct rmp_state *val)
 	}
 
 retry:
-	/* Binutils version 2.36 supports the RMPUPDATE mnemonic. */
-	asm volatile(".byte 0xF2, 0x0F, 0x01, 0xFE"
-		     : "=a"(ret)
-		     : "a"(paddr), "c"((unsigned long)val)
-		     : "memory", "cc");
+
+	if (virt_snp_msr()) {
+		ret = virt_rmpupdate(paddr, val);
+	} else {
+		/* Binutils version 2.36 supports the RMPUPDATE mnemonic. */
+		asm volatile(".byte 0xF2, 0x0F, 0x01, 0xFE"
+			     : "=a"(ret)
+			     : "a"(paddr), "c"((unsigned long)val)
+			     : "memory", "cc");
+	}
 
 	if (ret) {
 		if (!retries) {
