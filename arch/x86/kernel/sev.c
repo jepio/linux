@@ -87,7 +87,6 @@ struct rmpentry {
  * The first 16KB from the RMP_BASE is used by the processor for the
  * bookkeeping, the range needs to be added during the RMP entry lookup.
  */
-#define RMPTABLE_CPU_BOOKKEEPING_SZ	0x4000
 #define RMPENTRY_SHIFT			8
 #define rmptable_page_offset(x)	(RMPTABLE_CPU_BOOKKEEPING_SZ + (((unsigned long)x) >> RMPENTRY_SHIFT))
 
