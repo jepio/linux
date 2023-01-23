@@ -32,6 +32,8 @@
 #define PSP_QUIRK_IGNORE_VERSION	BIT(0)
 /* PSP only supports SNP subset of commands (SEV init won't succeed) */
 #define PSP_QUIRK_SNP_ONLY		BIT(1)
+/* PSP requires a reclaim after every firmware command */
+#define PSP_QUIRK_ALWAYS_RECLAIM	BIT(2)
 
 /* Structure to hold CCP device data */
 struct ccp_device;

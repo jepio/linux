@@ -104,7 +104,8 @@ static void sp_platform_fill_vdata(struct sp_dev_vdata *vdata,
 		.inten_reg = pdata->irq_en_reg,
 		.intsts_reg = pdata->irq_st_reg,
 		.quirks = PSP_QUIRK_IGNORE_VERSION|
-			  PSP_QUIRK_SNP_ONLY,
+			  PSP_QUIRK_SNP_ONLY|
+			  PSP_QUIRK_ALWAYS_RECLAIM,
 	};
 
 	memcpy(sev, &sevtmp, sizeof(*sev));
