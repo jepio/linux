@@ -3577,6 +3577,12 @@ int amd_iommu_pc_set_reg(struct amd_iommu *iommu, u8 bank, u8 cntr, u8 fxn, u64 
 int amd_iommu_snp_enable(void)
 {
 	/*
+	 * If we're running virtualized there doesn't have to be an IOMMU for SNP to work.
+	 */
+	if (init_state == IOMMU_NOT_FOUND && boot_cpu_has(X86_FEATURE_HYPERVISOR))
+		return 0;
+
+	/*
 	 * The SNP support requires that IOMMU must be enabled, and is
 	 * not configured in the passthrough mode.
 	 */
