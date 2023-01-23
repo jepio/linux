@@ -28,6 +28,9 @@
 #define CACHE_NONE			0x00
 #define CACHE_WB_NO_ALLOC		0xb7
 
+/* PSP requires a reclaim after every firmware command */
+#define PSP_QUIRK_ALWAYS_RECLAIM	BIT(0)
+
 /* Structure to hold CCP device data */
 struct ccp_device;
 struct ccp_vdata {
@@ -59,6 +62,7 @@ struct psp_vdata {
 	unsigned int feature_reg;
 	unsigned int inten_reg;
 	unsigned int intsts_reg;
+	unsigned int quirks;
 };
 
 /* Structure to hold SP device data */

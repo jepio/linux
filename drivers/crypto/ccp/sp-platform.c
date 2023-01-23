@@ -43,6 +43,7 @@ static struct psp_vdata psp_platform = {
 	.feature_reg = -1,
 	.inten_reg = -1,
 	.intsts_reg = -1,
+	.quirks = PSP_QUIRK_ALWAYS_RECLAIM,
 };
 #endif
 
