@@ -630,7 +630,10 @@ static int __snp_cmd_buf_copy(int cmd, void *cmd_buf, bool to_fw, int fw_err)
 	 * no not need to reclaim the page.
 	 */
 	if (from_fw && sev_legacy_cmd_buf_writable(cmd)) {
-		if (rmp_mark_pages_shared(__pa(cmd_buf), 1))
+		bool reclaim_pages = psp_master->vdata->quirks & PSP_QUIRK_ALWAYS_RECLAIM;
+		if (reclaim_pages && snp_reclaim_pages(__pa(cmd_buf), 1, true))
+			return -EFAULT;
+		else if (rmp_mark_pages_shared(__pa(cmd_buf), 1))
 			return -EFAULT;
 
 		/* No need to go further if firmware failed to execute command. */
