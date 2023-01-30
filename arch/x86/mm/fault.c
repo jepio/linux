@@ -35,6 +35,7 @@
 #include <asm/vdso.h>			/* fixup_vdso_exception()	*/
 #include <asm/irq_stack.h>
 #include <asm/sev.h>			/* dump_rmpentry()		*/
+#include <asm/hypervisor.h>		/* hypervisor_is_type()		*/
 
 #define CREATE_TRACE_POINTS
 #include <asm/trace/exceptions.h>
@@ -1235,6 +1236,19 @@ static int handle_user_rmp_page_fault(struct pt_regs *regs, unsigned long error_
 	pgd_t *pgd;
 	pte_t *pte;
 	u64 pfn;
+
+	/*
+	 * When an rmp fault occurs while not inside the SNP guest, the L0
+	 * hypervisor sees a NPF and does not have access to the address that
+	 * caused the fault to forward to L1 hypervisor. Hyper-V places a 0 in
+	 * the PF as a placeholder. SIGBUS the task since there's nothing
+	 * better that we can do.
+	 */
+	if (!address && hypervisor_is_type(X86_HYPER_MS_HYPERV)) {
+		WARN_ONCE(1, "RMP fault with 0 address: error_code=%lx\n", error_code);
+		do_sigbus(regs, error_code, address, VM_FAULT_SIGBUS);
+		return 1;
+	}
 
 	pgd = __va(read_cr3_pa());
 	pgd += pgd_index(address);
