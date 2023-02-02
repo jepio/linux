@@ -28,6 +28,9 @@
 #define CACHE_NONE			0x00
 #define CACHE_WB_NO_ALLOC		0xb7
 
+/* Version is not indicative of feature support and all versions support SNP */
+#define PSP_QUIRK_IGNORE_VERSION	BIT(0)
+
 /* Structure to hold CCP device data */
 struct ccp_device;
 struct ccp_vdata {
