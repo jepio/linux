@@ -30,6 +30,8 @@
 
 /* PSP requires a reclaim after every firmware command */
 #define PSP_QUIRK_ALWAYS_RECLAIM	BIT(0)
+/* Version is not indicative of feature support and all versions support SNP */
+#define PSP_QUIRK_IGNORE_VERSION	BIT(1)
 
 /* Structure to hold CCP device data */
 struct ccp_device;

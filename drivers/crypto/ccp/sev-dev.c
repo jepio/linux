@@ -2246,7 +2246,8 @@ void sev_pci_init(void)
 	 * the SNP firmware.
 	 */
 	if (cpu_feature_enabled(X86_FEATURE_SEV_SNP)) {
-		if (!sev_version_greater_or_equal(SNP_MIN_API_MAJOR, SNP_MIN_API_MINOR)) {
+		if (!sev_version_greater_or_equal(SNP_MIN_API_MAJOR, SNP_MIN_API_MINOR) &&
+			!(psp_master->vdata->quirks & PSP_QUIRK_IGNORE_VERSION)) {
 			dev_err(sev->dev, "SEV-SNP support requires firmware version >= %d:%d\n",
 				SNP_MIN_API_MAJOR, SNP_MIN_API_MINOR);
 		} else {
