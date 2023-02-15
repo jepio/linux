@@ -3641,6 +3641,7 @@ static void svm_flush_tlb_current(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 
+	hv_flush_tlb_current(vcpu);
 	/*
 	 * Flush only the current ASID even if the TLB flush was invoked via
 	 * kvm_flush_remote_tlbs().  Although flushing remote TLBs requires all
