@@ -38,7 +38,9 @@ struct psp_irq_data {
 	void __iomem *base;
 	u8 mbox_irq_id;
 	int acpi_cmd_resp_reg;
+	struct irq_domain *domain;
 };
+static struct psp_irq_data pspirqd;
 
 static int psp_sync_cmd(void __iomem *reg, u8 cmd, u16 data)
 {
@@ -109,14 +111,88 @@ static int psp_configure_irq(struct psp_irq_data *data, unsigned int vector, uns
 	return 0;
 }
 
+static int psp_irq_set_affinity(struct irq_data *data, const struct cpumask *mask, bool force)
+{
+	struct psp_irq_data *pspirqd = irq_data_get_irq_chip_data(data);
+	unsigned int cpu = cpumask_first(mask);
+	struct irq_cfg *cfg;
+	int err;
+
+	err = irq_chip_set_affinity_parent(data, cpumask_of(cpu), force);
+	if (err < 0 || err == IRQ_SET_MASK_OK_DONE)
+		return err;
+
+	cfg = irqd_cfg(data);
+	err = psp_configure_irq(pspirqd, cfg->vector, cpu);
+	if (err)
+		return err;
+
+	return 0;
+}
+
+static void psp_irq_enable(struct irq_data *data)
+{
+	struct psp_irq_data *pspirqd = irq_data_get_irq_chip_data(data);
+	int err;
+
+	err = psp_set_irq_enable(pspirqd, true);
+	if (err)
+		return;
+
+	irq_chip_enable_parent(data);
+}
+
+static void psp_irq_disable(struct irq_data *data)
+{
+	struct psp_irq_data *pspirqd = irq_data_get_irq_chip_data(data);
+	int err;
+
+	err = psp_set_irq_enable(pspirqd, false);
+	if (err)
+		return;
+
+	irq_chip_disable_parent(data);
+}
+
+static const struct irq_chip psp_irq_chip = {
+	.name			= "PSP-IRQ",
+	.irq_set_affinity	= psp_irq_set_affinity,
+	.irq_ack		= irq_chip_ack_parent,
+	.irq_retrigger  = irq_chip_retrigger_hierarchy,
+	.irq_mask		= irq_chip_mask_parent,
+	.irq_unmask		= irq_chip_unmask_parent,
+	.irq_enable     = psp_irq_enable,
+	.irq_disable    = psp_irq_disable,
+	.flags			= IRQCHIP_AFFINITY_PRE_STARTUP,
+};
+
+static int psp_irq_domain_alloc(struct irq_domain *domain, unsigned int virq,
+				unsigned int nr_irqs, void *args)
+{
+	int err;
+	int i;
+
+	err = irq_domain_alloc_irqs_parent(domain, virq, nr_irqs, args);
+	if (err)
+		return err;
+
+	for (i = virq; i < virq + nr_irqs; i++) {
+		irq_set_chip_and_handler_name(i, &psp_irq_chip, handle_edge_irq, "edge");
+		irq_set_chip_data(i, domain->host_data);
+	}
+	return 0;
+}
+
+static const struct irq_domain_ops psp_irq_domain_ops = {
+	.alloc	= psp_irq_domain_alloc,
+	.free	= irq_domain_free_irqs_top,
+};
 
 static int psp_init_irq(const struct psp_platform_data *pdata, const struct resource *reg,
 			struct resource *irq)
 {
-	struct psp_irq_data pspirqd;
 	struct irq_alloc_info info;
-	struct irq_data *data;
-	struct irq_cfg *cfg;
+	struct fwnode_handle *fn;
 	void __iomem *base;
 	int virq;
 	int err;
@@ -128,51 +204,37 @@ static int psp_init_irq(const struct psp_platform_data *pdata, const struct reso
 	pspirqd.mbox_irq_id = pdata->mbox_irq_id;
 	pspirqd.acpi_cmd_resp_reg = pdata->acpi_cmd_resp_reg;
 	pspirqd.base = base;
-	init_irq_alloc_info(&info, cpumask_of(0));
-	virq = irq_domain_alloc_irqs(NULL, 1, NUMA_NO_NODE, &info);
-	if (virq <= 0) {
-		pr_err("failed to allocate vector: %d\n", virq);
+
+	fn = irq_domain_alloc_named_fwnode("AMD-PSP-IRQ");
+	if (!fn) {
 		err = -ENOMEM;
 		goto unmap;
 	}
-	irq_set_handler(virq, handle_edge_irq);
 
-	data = irq_get_irq_data(virq);
-	if (!data) {
-		pr_err("no irq data\n");
-		err = -ENODEV;
-		goto freeirq;
-
+	pspirqd.domain = irq_domain_create_hierarchy(x86_vector_domain, 0, 1,
+							fn,
+							&psp_irq_domain_ops,
+							&pspirqd);
+	if (!pspirqd.domain) {
+		err = -ENOMEM;
+		goto freefwnode;
 	}
 
-	cfg = irqd_cfg(data);
-	if (!cfg) {
-		pr_err("no irq cfg\n");
-		err = -ENODEV;
-		goto freeirq;
+	init_irq_alloc_info(&info, NULL);
+	virq = irq_domain_alloc_irqs(pspirqd.domain, 1, NUMA_NO_NODE, &info);
+	if (virq < 0) {
+		err = virq;
+		goto freedomain;
 	}
-
-	err = psp_configure_irq(&pspirqd, cfg->vector, 0);
-	if (err) {
-		pr_err("failed to configure irq: %d\n", err);
-		goto freeirq;
-	}
-
-	err = psp_set_irq_enable(&pspirqd, true);
-	if (err) {
-		pr_err("failed to enable irq: %d\n", err);
-		goto freeirq;
-	}
-
 	*irq = (struct resource)DEFINE_RES_IRQ(virq);
-
-	iounmap(base);
 
 	return 0;
 
-freeirq:
-	irq_domain_free_irqs(virq, 1);
-
+freedomain:
+	irq_domain_remove(pspirqd.domain);
+	pspirqd.domain = NULL;
+freefwnode:
+	irq_domain_free_fwnode(fn);
 unmap:
 	iounmap(base);
 
