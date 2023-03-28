@@ -4,6 +4,7 @@
 #include <linux/platform_device.h>
 #include <linux/iopoll.h>
 #include <linux/irq.h>
+#include <asm/apic.h>
 #include <asm/hypervisor.h>
 #include <asm/irqdomain.h>
 
@@ -12,6 +13,7 @@
 #define PSP_ACPI_STATUS_MASK GENMASK(30, 26)
 #define PSP_ACPI_RESPONSE_BIT BIT(31)
 #define PSP_ACPI_VECTOR_MASK GENMASK(7, 0)
+#define PSP_ACPI_DEST_MODE_SHIFT 9
 #define PSP_ACPI_MBOX_IRQID_SHIFT 10
 #define PSP_ACPI_IRQ_EN_BIT BIT(0)
 #define PSP_ACPI_IRQ_EN_MBOX_IRQID_SHIFT 10
@@ -77,19 +79,19 @@ static int psp_set_irq_enable(struct psp_irq_data *data, bool irq_en)
 	return 0;
 }
 
-static int psp_configure_irq(struct psp_irq_data *data, unsigned int vector, unsigned int cpu)
+static int psp_configure_irq(struct psp_irq_data *data, unsigned int vector, unsigned int apicid)
 {
 	void __iomem *reg = data->base + data->acpi_cmd_resp_reg;
-	unsigned int dest_cpu = cpu_physical_id(cpu);
 	u16 part1, part2, part3;
 	int err;
 
 	if (data->mbox_irq_id > 63)
 		return -EINVAL;
 
-	part1  = dest_cpu;
-	part2  = dest_cpu >> 16;
+	part1  = apicid;
+	part2  = apicid >> 16;
 	part3  = vector & PSP_ACPI_VECTOR_MASK;
+	part3 |= apic->dest_mode_logical << PSP_ACPI_DEST_MODE_SHIFT;
 	part3 |= data->mbox_irq_id << PSP_ACPI_MBOX_IRQID_SHIFT;
 
 	err = psp_sync_cmd(reg, ASP_CMDID_PART1, part1);
@@ -114,16 +116,15 @@ static int psp_configure_irq(struct psp_irq_data *data, unsigned int vector, uns
 static int psp_irq_set_affinity(struct irq_data *data, const struct cpumask *mask, bool force)
 {
 	struct psp_irq_data *pspirqd = irq_data_get_irq_chip_data(data);
-	unsigned int cpu = cpumask_first(mask);
 	struct irq_cfg *cfg;
 	int err;
 
-	err = irq_chip_set_affinity_parent(data, cpumask_of(cpu), force);
+	err = irq_chip_set_affinity_parent(data, mask, force);
 	if (err < 0 || err == IRQ_SET_MASK_OK_DONE)
 		return err;
 
 	cfg = irqd_cfg(data);
-	err = psp_configure_irq(pspirqd, cfg->vector, cpu);
+	err = psp_configure_irq(pspirqd, cfg->vector, cfg->dest_apicid);
 	if (err)
 		return err;
 
