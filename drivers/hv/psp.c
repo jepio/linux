@@ -130,39 +130,27 @@ static int psp_irq_set_affinity(struct irq_data *data, const struct cpumask *mas
 	return 0;
 }
 
-static void psp_irq_enable(struct irq_data *data)
+static void psp_irq_unmask(struct irq_data *data)
 {
 	struct psp_irq_data *pspirqd = irq_data_get_irq_chip_data(data);
-	int err;
 
-	err = psp_set_irq_enable(pspirqd, true);
-	if (err)
-		return;
-
-	irq_chip_enable_parent(data);
+	psp_set_irq_enable(pspirqd, true);
 }
 
-static void psp_irq_disable(struct irq_data *data)
+static void psp_irq_mask(struct irq_data *data)
 {
 	struct psp_irq_data *pspirqd = irq_data_get_irq_chip_data(data);
-	int err;
 
-	err = psp_set_irq_enable(pspirqd, false);
-	if (err)
-		return;
-
-	irq_chip_disable_parent(data);
+	psp_set_irq_enable(pspirqd, false);
 }
 
 static const struct irq_chip psp_irq_chip = {
 	.name			= "PSP-IRQ",
 	.irq_set_affinity	= psp_irq_set_affinity,
 	.irq_ack		= irq_chip_ack_parent,
-	.irq_retrigger  = irq_chip_retrigger_hierarchy,
-	.irq_mask		= irq_chip_mask_parent,
-	.irq_unmask		= irq_chip_unmask_parent,
-	.irq_enable     = psp_irq_enable,
-	.irq_disable    = psp_irq_disable,
+	.irq_retrigger  	= irq_chip_retrigger_hierarchy,
+	.irq_mask	     	= psp_irq_mask,
+	.irq_unmask	    	= psp_irq_unmask,
 	.flags			= IRQCHIP_AFFINITY_PRE_STARTUP,
 };
 
