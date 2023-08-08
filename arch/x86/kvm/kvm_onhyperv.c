@@ -122,12 +122,3 @@ void hv_track_root_tdp(struct kvm_vcpu *vcpu, hpa_t root_tdp)
 	}
 }
 EXPORT_SYMBOL_GPL(hv_track_root_tdp);
-
-void hv_flush_tlb_current(struct kvm_vcpu *vcpu)
-{
-	if (kvm_x86_ops.flush_remote_tlbs != hv_flush_remote_tlbs)
-		return;
-
-	WARN_ON_ONCE(hyperv_flush_guest_mapping(vcpu->arch.mmu->root.hpa));
-}
-EXPORT_SYMBOL_GPL(hv_flush_tlb_current);
