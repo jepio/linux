@@ -13,6 +13,7 @@
 #include <asm/apic.h>
 #include <asm/cacheinfo.h>
 #include <asm/cpu.h>
+#include <asm/hypervisor.h>
 #include <asm/spec-ctrl.h>
 #include <asm/smp.h>
 #include <asm/numa.h>
@@ -628,6 +629,14 @@ static bool early_rmptable_check(void)
 	 * it is set before performing the RMP table calculations.
 	 */
 	if (!max_pfn)
+		return true;
+
+	/*
+	 * Hyper-V does not allocate the rmp so the kernel does it and sets the MSRs
+	 * from a cpuhp notifier. Notifiers run after the cpu init so we would always
+	 * disable SNP unneccessarily.
+	 */
+	if (hypervisor_is_type(X86_HYPER_MS_HYPERV))
 		return true;
 
 	return snp_get_rmptable_info(&rmp_base, &rmp_size);
