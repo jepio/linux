@@ -13,6 +13,7 @@
 #include <asm/apic.h>
 #include <asm/cacheinfo.h>
 #include <asm/cpu.h>
+#include <asm/hypervisor.h>
 #include <asm/spec-ctrl.h>
 #include <asm/smp.h>
 #include <asm/numa.h>
@@ -594,12 +595,19 @@ static void bsp_init_amd(struct cpuinfo_x86 *c)
 		 * and is defined by the per-processor PPR. Restrict SNP support on the
 		 * known CPU model and family for which the RMP table entry format is
 		 * currently defined for.
+		 *
+		 * In nested virtualization it is the kernel that allocates the RMP table, but
+		 * this happens after E820 parsing. On baremetal we rely on disabling SEV-SNP
+		 * here if BIOS has been configured to not allocate an RMP, so that we can still
+		 * use AutoIBRS on non-SEV-SNP configs. AutoIBRS is disabled when SEV-SNP is enabled
+		 * because it impacts userspace performance as well and retpolines don't.
+		 * To make these requirements work together - check if we're virtualized.
 		 */
 		if (!boot_cpu_has(X86_FEATURE_ZEN3) &&
 		    !boot_cpu_has(X86_FEATURE_ZEN4) &&
 		    !boot_cpu_has(X86_FEATURE_ZEN5))
 			setup_clear_cpu_cap(X86_FEATURE_SEV_SNP);
-		else if (!snp_probe_rmptable_info())
+		else if (!boot_cpu_has(X86_FEATURE_HYPERVISOR) && !snp_probe_rmptable_info())
 			setup_clear_cpu_cap(X86_FEATURE_SEV_SNP);
 	}
 
