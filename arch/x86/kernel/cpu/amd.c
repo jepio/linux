@@ -13,6 +13,7 @@
 #include <asm/apic.h>
 #include <asm/cacheinfo.h>
 #include <asm/cpu.h>
+#include <asm/hypervisor.h>
 #include <asm/spec-ctrl.h>
 #include <asm/smp.h>
 #include <asm/numa.h>
@@ -623,6 +624,9 @@ static bool early_rmptable_check(void)
 {
 #ifdef CONFIG_KVM_AMD_SEV	
 	u64 rmp_base, rmp_size;
+
+	if (boot_cpu_has(X86_FEATURE_HYPERVISOR))
+		return true;
 
 	/*
 	 * For early BSP initialization, max_pfn won't be set up yet, wait until
