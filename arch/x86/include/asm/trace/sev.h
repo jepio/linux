@@ -39,6 +39,7 @@ TRACE_EVENT(sev_rmpupdate,
 		__entry->gpa = (unsigned long)val->gpa;
 		__entry->assigned = val->assigned;
 		__entry->pagesize = val->pagesize;
+		__entry->immutable = val->immutable;
 		__entry->asid = val->asid;
 		__entry->ret = ret;
 	),
