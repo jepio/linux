@@ -6352,7 +6352,7 @@ void kvm_zap_gfn_range(struct kvm *kvm, gfn_t gfn_start, gfn_t gfn_end)
 	if (tdp_mmu_enabled) {
 		for (i = 0; i < kvm_arch_nr_memslot_as_ids(kvm); i++)
 			flush = kvm_tdp_mmu_zap_leafs(kvm, i, gfn_start,
-						      gfn_end, true, flush);
+						      gfn_end, flush);
 	}
 
 	if (flush)
