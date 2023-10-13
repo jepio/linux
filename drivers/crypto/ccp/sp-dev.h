@@ -69,6 +69,7 @@ struct psp_vdata {
 	const unsigned int feature_reg;
 	const unsigned int inten_reg;
 	const unsigned int intsts_reg;
+	const unsigned int quirks;
 };
 
 /* Structure to hold SP device data */
