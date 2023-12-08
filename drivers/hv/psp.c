@@ -92,7 +92,7 @@ static int psp_configure_irq(struct psp_irq_data *data, const struct msi_msg *ms
 		return -EINVAL;
 
 	vector = msg->arch_data.vector;
-	apicid = msg->arch_addr_lo.destid_8_14 << 8 |  msg->arch_addr_lo.destid_0_7;
+	apicid = msg->arch_addr_lo.virt_destid_8_14 << 8 |  msg->arch_addr_lo.destid_0_7;
 	dest_mode_logical = msg->arch_addr_lo.dest_mode_logical;
 
 	part1  = apicid;
