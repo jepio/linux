@@ -961,11 +961,6 @@ static int __sev_platform_init_locked(int *error)
 		dev_err(sev->dev, "SEV-SNP: failed to INIT rc %d, error %#x\n", rc, *error);
 	}
 
-	if (sev->snp_initialized && psp->vdata->quirks & PSP_QUIRK_SNP_ONLY) {
-		sev->state = SEV_STATE_INIT;
-		return 0;
-	}
-
 	/*
 	 * Allocate the intermediate buffers used for the legacy command handling.
 	 */
@@ -986,6 +981,12 @@ static int __sev_platform_init_locked(int *error)
 				 "SEV: TMR allocation failed, SEV-ES support unavailable\n");
 		}
 	}
+
+	if (sev->snp_initialized && psp->vdata->quirks & PSP_QUIRK_SNP_ONLY) {
+		sev->state = SEV_STATE_INIT;
+		return 0;
+	}
+
 
 	if (sev_init_ex_buffer) {
 		rc = sev_read_init_ex_file();
