@@ -55,7 +55,7 @@ config HYPERV_BALLOON
 	  Select this option to enable Hyper-V Balloon driver.
 
 config HYPERV_PSP
-	boolean "Hyper-V (virtual) PSP driver"
+	bool "Hyper-V (virtual) PSP driver"
 	depends on KVM_AMD_SEV && HYPERV && ACPI && X86_64
 	help
 	  Select this option to enable Hyper-V (virtual) PSP driver.
