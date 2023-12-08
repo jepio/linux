@@ -230,14 +230,11 @@ unmap:
 	return err;
 }
 
-static struct platform_device psp_device = {
-	.name           = "psp",
-	.id             = PLATFORM_DEVID_NONE,
-};
 
 static int __init psp_init_platform_device(void)
 {
 	struct psp_platform_data pdata = {};
+	struct platform_device *psp_device;
 	struct resource res[2];
 	int err;
 
@@ -254,18 +251,28 @@ static int __init psp_init_platform_device(void)
 	if (err)
 		return err;
 	err = psp_init_irq(&pdata, &res[0], &res[1]);
+	psp_device = platform_device_alloc("psp", PLATFORM_DEVID_NONE);
+	if (!psp_device) {
+		pr_err("failed to alloc platform device\n");
+		return -ENOMEM;
+	}
 	if (err)
 		return err;
 	err = platform_device_add_resources(&psp_device, res, 2);
 	if (err)
-		return err;
-	err = platform_device_add_data(&psp_device, &pdata, sizeof(pdata));
+		goto err;
+	err = platform_device_add_data(psp_device, &pdata, sizeof(pdata));
 	if (err)
-		return err;
-
-	err = platform_device_register(&psp_device);
+		goto err;
+	err = platform_device_add(psp_device);
 	if (err)
-		return err;
+		goto err;
 	return 0;
+
+err:
+	platform_device_put(psp_device);
+	return err;
 }
 device_initcall(psp_init_platform_device);
+
+MODULE_LICENSE("GPL");
