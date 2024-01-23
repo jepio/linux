@@ -219,7 +219,7 @@ static int __init snp_rmptable_init(void)
 	if (!(family == 0x19 && model <= 0xaf) && !(family == 0x1a && model <= 0xf))
 		goto nosnp;
 
-	if (amd_iommu_snp_enable())
+	if (!boot_cpu_has(X86_FEATURE_HYPERVISOR) && amd_iommu_snp_enable())
 		goto nosnp;
 
 	if (__snp_rmptable_init())
