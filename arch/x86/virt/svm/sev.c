@@ -176,7 +176,7 @@ static int __init snp_rmptable_init(void)
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
 		return 0;
 
-	if (!amd_iommu_snp_en)
+	if (!boot_cpu_has(X86_FEATURE_HYPERVISOR) && !amd_iommu_snp_en)
 		return 0;
 
 	if (!probed_rmp_size)
