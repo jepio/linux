@@ -1281,7 +1281,7 @@ static int __sev_platform_init_locked(int *error)
 		}
 	}
 
-	if (sev->snp_initialized && psp->vdata->quirks & PSP_QUIRK_SNP_ONLY) {
+	if (sev->snp_initialized && psp_master->vdata->quirks & PSP_QUIRK_SNP_ONLY) {
 		sev->state = SEV_STATE_INIT;
 		return 0;
 	}
