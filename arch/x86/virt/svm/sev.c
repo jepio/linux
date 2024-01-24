@@ -484,6 +484,7 @@ static int invalidate_direct_map(u64 pfn, int npages)
 	return ret;
 }
 
+/*
  * This version of rmpupdate is not implemented in hardware but always
  * traps to L0 hypervisor. It doesn't follow usual wrmsr conventions.
  * Inputs:
@@ -582,7 +583,7 @@ static int rmpupdate(u64 pfn, struct rmp_state *state)
 
 	do {
 		if (virt_snp_msr()) {
-			ret = virt_rmpupdate(paddr, val);
+			ret = virt_rmpupdate(paddr, state);
 			if (!ret && snp_soft_rmptable())
 				snp_update_rmptable_rmpupdate(pfn, level, val);
 		} else {
