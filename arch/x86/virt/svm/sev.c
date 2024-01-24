@@ -397,21 +397,19 @@ static u64 virt_psmash(u64 paddr)
 static void snp_update_rmptable_psmash(u64 pfn)
 {
 	int level;
-	struct rmpentry entry;
-	int ret = __snp_lookup_rmpentry(pfn, &entry, &level);
+	struct rmpentry *entry = __snp_lookup_rmpentry(pfn, &level);
 
-	if (WARN_ON(ret))
+	if (WARN_ON_ONCE(IS_ERR(entry)))
 		return;
 
 	if (level == PG_LEVEL_2M) {
+		entry->pagesize = RMP_PG_SIZE_4K;
 		int i;
 
-		entry.pagesize = RMP_PG_SIZE_4K;
-		rmptable_start[pfn] = entry;
 		for (i = 1; i < PTRS_PER_PMD; i++) {
-			struct rmpentry *it = &rmptable_start[pfn + i];
-			*it = entry;
-			it->gpa = entry.gpa + i * PAGE_SIZE;
+			struct rmpentry *it = get_rmpentry(pfn + i);
+			*it = *entry;
+			it->gpa = entry->gpa + i * PAGE_SIZE;
 		}
 	}
 }
@@ -513,10 +511,9 @@ static u64 virt_rmpupdate(unsigned long paddr, struct rmp_state *val)
 static void snp_update_rmptable_rmpupdate(u64 pfn, int level, struct rmp_state *val)
 {
 	int prev_level;
-	struct rmpentry entry;
-	int ret = __snp_lookup_rmpentry(pfn, &entry, &prev_level);
+	struct rmpentry *entry = __snp_lookup_rmpentry(pfn, &prev_level);
 
-	if (WARN_ON(ret))
+	if (WARN_ON(IS_ERR(entry)))
 		return;
 
 	if (level > PG_LEVEL_4K) {
@@ -526,18 +523,17 @@ static void snp_update_rmptable_rmpupdate(u64 pfn, int level, struct rmp_state *
 		};
 		WARN_ON((pfn + PTRS_PER_PMD) > rmptable_max_pfn);
 		for (i = 1; i < PTRS_PER_PMD; i++)
-			rmptable_start[pfn + i] = tmp_rmp;
+			*get_rmpentry(pfn + i) = tmp_rmp;
 	}
 	if (!val->assigned) {
-		memset(&entry, 0, sizeof(entry));
+		memset(entry, 0, sizeof(entry));
 	} else {
-		entry.assigned = val->assigned;
-		entry.pagesize = val->pagesize;
-		entry.immutable = val->immutable;
-		entry.gpa = val->gpa;
-		entry.asid = val->asid;
+		entry->assigned = val->assigned;
+		entry->pagesize = val->pagesize;
+		entry->immutable = val->immutable;
+		entry->gpa = val->gpa;
+		entry->asid = val->asid;
 	}
-	rmptable_start[pfn] = entry;
 }
 
 /*
@@ -585,7 +581,7 @@ static int rmpupdate(u64 pfn, struct rmp_state *state)
 		if (virt_snp_msr()) {
 			ret = virt_rmpupdate(paddr, state);
 			if (!ret && snp_soft_rmptable())
-				snp_update_rmptable_rmpupdate(pfn, level, val);
+				snp_update_rmptable_rmpupdate(pfn, level, state);
 		} else {
 			/* Binutils version 2.36 supports the RMPUPDATE mnemonic. */
 			asm volatile(".byte 0xF2, 0x0F, 0x01, 0xFE"
