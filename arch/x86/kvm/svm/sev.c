@@ -4025,6 +4025,7 @@ static int sev_handle_vmgexit_msr_protocol(struct vcpu_svm *svm)
 	ghcb_info = control->ghcb_gpa & GHCB_MSR_INFO_MASK;
 
 	trace_kvm_vmgexit_msr_protocol_enter(svm->vcpu.vcpu_id,
+					     svm->sev_es.snp_current_vmpl,
 					     control->ghcb_gpa);
 
 	switch (ghcb_info) {
@@ -4201,13 +4202,16 @@ int sev_handle_vmgexit(struct kvm_vcpu *vcpu)
 
 	svm->sev_es.ghcb = svm->sev_es.ghcb_map.hva;
 
-	trace_kvm_vmgexit_enter(vcpu->vcpu_id, svm->sev_es.ghcb);
+	trace_kvm_vmgexit_enter(vcpu->vcpu_id, svm->sev_es.snp_current_vmpl, svm->sev_es.ghcb);
 
 	sev_es_sync_from_ghcb(svm);
 	
 	/* SEV-SNP guest requires that the GHCB GPA must be registered */
 	if (sev_snp_guest(svm->vcpu.kvm) && !ghcb_gpa_is_registered(svm, ghcb_gpa)) {
 		vcpu_unimpl(&svm->vcpu, "vmgexit: GHCB GPA [%#llx] is not registered.\n", ghcb_gpa);
+		for (int i = 0; i < SVM_SEV_VMPL_MAX; i++) {
+			pr_info("vmpl %i: %#llx\n", i, svm->sev_es.ghcb_registered_gpa[i]);
+		}
 		return -EINVAL;
 	}
 

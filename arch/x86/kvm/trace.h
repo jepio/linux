@@ -1739,11 +1739,12 @@ TRACE_EVENT(kvm_hv_syndbg_get_msr,
  * Tracepoint for the start of VMGEXIT processing
  */
 TRACE_EVENT(kvm_vmgexit_enter,
-	TP_PROTO(unsigned int vcpu_id, struct ghcb *ghcb),
-	TP_ARGS(vcpu_id, ghcb),
+	TP_PROTO(unsigned int vcpu_id, u8 vmpl, struct ghcb *ghcb),
+	TP_ARGS(vcpu_id, vmpl, ghcb),
 
 	TP_STRUCT__entry(
 		__field(unsigned int, vcpu_id)
+		__field(u8, vmpl)
 		__field(u64, exit_reason)
 		__field(u64, info1)
 		__field(u64, info2)
@@ -1751,13 +1752,14 @@ TRACE_EVENT(kvm_vmgexit_enter,
 
 	TP_fast_assign(
 		__entry->vcpu_id     = vcpu_id;
+		__entry->vmpl        = vmpl;
 		__entry->exit_reason = ghcb->save.sw_exit_code;
 		__entry->info1       = ghcb->save.sw_exit_info_1;
 		__entry->info2       = ghcb->save.sw_exit_info_2;
 	),
 
-	TP_printk("vcpu %u, exit_reason %llx, exit_info1 %llx, exit_info2 %llx",
-		  __entry->vcpu_id, __entry->exit_reason,
+	TP_printk("vcpu %u, vmpl %u, exit_reason %llx, exit_info1 %llx, exit_info2 %llx",
+		  __entry->vcpu_id, __entry->vmpl, __entry->exit_reason,
 		  __entry->info1, __entry->info2)
 );
 
@@ -1791,21 +1793,23 @@ TRACE_EVENT(kvm_vmgexit_exit,
  * Tracepoint for the start of VMGEXIT MSR procotol processing
  */
 TRACE_EVENT(kvm_vmgexit_msr_protocol_enter,
-	TP_PROTO(unsigned int vcpu_id, u64 ghcb_gpa),
-	TP_ARGS(vcpu_id, ghcb_gpa),
+	TP_PROTO(unsigned int vcpu_id, u8 vmpl, u64 ghcb_gpa),
+	TP_ARGS(vcpu_id, vmpl, ghcb_gpa),
 
 	TP_STRUCT__entry(
 		__field(unsigned int, vcpu_id)
+		__field(u8, vmpl)
 		__field(u64, ghcb_gpa)
 	),
 
 	TP_fast_assign(
 		__entry->vcpu_id  = vcpu_id;
+		__entry->vmpl     = vmpl;
 		__entry->ghcb_gpa = ghcb_gpa;
 	),
 
-	TP_printk("vcpu %u, ghcb_gpa %016llx",
-		  __entry->vcpu_id, __entry->ghcb_gpa)
+	TP_printk("vcpu %u, vmpl %u, ghcb_gpa %016llx",
+		  __entry->vcpu_id, __entry->vmpl, __entry->ghcb_gpa)
 );
 
 /*
